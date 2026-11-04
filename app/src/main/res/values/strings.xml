@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TOTEM</string>
+    <string name="app_tagline">Private intelligence</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_workspace">Workspace</string>
+    <string name="nav_wallet">Wallet</string>
+    <string name="nav_profile">Profile</string>
+</resources>
