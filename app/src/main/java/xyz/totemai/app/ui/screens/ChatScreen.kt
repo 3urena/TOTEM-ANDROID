@@ -154,12 +154,14 @@ fun ChatScreen(
             error = null
             try {
                 val fresh = api.newThread(currentWorkspace.slug)
+                val snapshot = api.workspaceContent(currentWorkspace.slug)
                 activeThreadSlug = fresh.slug
                 messages = emptyList()
-                refreshHistory(keepSelection = false)
-                // Keep the newly created chat selected even though it has no messages yet.
-                activeThreadSlug = fresh.slug
-                threads = listOf(fresh) + threads.filterNot { it.slug == fresh.slug }
+                threads = if (snapshot.threads.any { it.slug == fresh.slug }) {
+                    snapshot.threads
+                } else {
+                    listOf(fresh) + snapshot.threads
+                }
                 drawerState.close()
             } catch (e: Exception) {
                 error = e.message ?: "Could not create a new chat."
