@@ -19,8 +19,7 @@ data class ApiWorkspace(
     val slug: String
 )
 
-data class ApiMessage(
-    val id: String,
+data class ApiThread(\n    val id: String,\n    val name: String,\n    val slug: String\n)\n\ndata class ApiMessage(\n    val id: String,
     val role: String,
     val content: String
 )
@@ -96,10 +95,10 @@ object TotemApi {
             }
         }
 
-    suspend fun getChatHistory(token: String, workspaceSlug: String): List<ApiMessage> =
+    suspend fun getChatHistory(token: String, workspaceSlug: String, threadSlug: String? = null): List<ApiMessage> =
         withContext(Dispatchers.IO) {
             val encodedSlug = Uri.encode(workspaceSlug)
-            val response = requestJson("GET", "/workspace/" + encodedSlug + "/chats", token = token)
+            val historyPath = if (threadSlug.isNullOrBlank()) "/workspace/" + encodedSlug + "/chats" else "/workspace/" + encodedSlug + "/thread/" + Uri.encode(threadSlug) + "/chats"\n            val response = requestJson("GET", historyPath, token = token)
             val history = response.optJSONArray("history") ?: JSONArray()
             val messages = mutableListOf<ApiMessage>()
 
@@ -133,7 +132,7 @@ object TotemApi {
     ): String = withContext(Dispatchers.IO) {
         val connection = openConnection(
             method = "POST",
-            path = "/workspace/" + Uri.encode(workspaceSlug) + "/stream-chat",
+            path = if (threadSlug.isNullOrBlank()) "/workspace/" + Uri.encode(workspaceSlug) + "/stream-chat" else "/workspace/" + Uri.encode(workspaceSlug) + "/thread/" + Uri.encode(threadSlug) + "/stream-chat",
             token = token,
             accept = "text/event-stream"
         )
