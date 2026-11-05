@@ -124,7 +124,7 @@ fun HomeScreen(
             )
         ) {
             Text(
-                text = if (signedIn) "OPEN WORKSPACE" else "SIGN IN",
+                text = if (signedIn) "OPEN CHAT" else "SIGN IN",
                 style = MaterialTheme.typography.labelLarge
             )
         }
@@ -133,8 +133,8 @@ fun HomeScreen(
 
         ActionRow(
             icon = Icons.Default.Send,
-            title = "Workspace",
-            subtitle = "Threads, models and tools on the live platform"
+            title = "Chat",
+            subtitle = "Start a new chat or open your saved conversations"
         ) { onOpenWorkspace() }
 
         Spacer(Modifier.height(10.dp))
