@@ -13,6 +13,7 @@ class SessionStore private constructor(context: Context) {
     private var opened = false
     private var memoryToken: String? = null
     private var memoryUser: String? = null
+    private var memoryDeviceToken: String? = null
 
     @Synchronized
     private fun prefs(): SharedPreferences? {
@@ -71,6 +72,31 @@ class SessionStore private constructor(context: Context) {
     @Synchronized
     fun user(): String? = read(KEY_USER) ?: memoryUser
 
+    @Synchronized
+    fun deviceToken(): String? = read(KEY_DEVICE_TOKEN) ?: memoryDeviceToken
+
+    @Synchronized
+    fun saveDeviceToken(token: String) {
+        val p = prefs()
+        if (p == null) {
+            memoryDeviceToken = token
+            return
+        }
+        runCatching { p.edit().putString(KEY_DEVICE_TOKEN, token).apply() }
+            .onSuccess { memoryDeviceToken = null }
+            .onFailure {
+                Log.w(TAG, "encrypted device-token write failed; using memory-only token")
+                prefs = null
+                memoryDeviceToken = token
+            }
+    }
+
+    @Synchronized
+    fun clearDeviceToken() {
+        memoryDeviceToken = null
+        runCatching { prefs()?.edit()?.remove(KEY_DEVICE_TOKEN)?.apply() }
+    }
+
     private fun read(key: String): String? {
         val p = prefs() ?: return null
         return runCatching { p.getString(key, null) }
@@ -85,6 +111,7 @@ class SessionStore private constructor(context: Context) {
     fun clear() {
         memoryToken = null
         memoryUser = null
+        memoryDeviceToken = null
         val p = prefs() ?: return
         runCatching { p.edit().clear().apply() }
             .onFailure {
@@ -100,6 +127,7 @@ class SessionStore private constructor(context: Context) {
         private const val FILE = "totem_session"
         const val KEY_TOKEN = TotemConfig.KEY_TOKEN
         const val KEY_USER = TotemConfig.KEY_USER
+        private const val KEY_DEVICE_TOKEN = "totem_mobile_device_token"
 
         @Volatile
         private var instance: SessionStore? = null
