@@ -99,7 +99,6 @@ fun HomeScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusChip(text = if (online) "ONLINE" else "OFFLINE", active = online)
-            StatusChip(text = if (signedIn) "SIGNED IN" else "SIGNED OUT", active = signedIn)
         }
 
         if (!displayName.isNullOrBlank()) {
