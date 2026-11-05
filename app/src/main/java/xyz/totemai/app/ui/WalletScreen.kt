@@ -10,12 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -91,17 +89,6 @@ fun WalletScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
-            Spacer(Modifier.height(14.dp))
-            Button(
-                onClick = onOpenWalletConnection,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)
-            ) {
-                Icon(Icons.Default.OpenInBrowser, contentDescription = null)
-                Spacer(Modifier.height(0.dp))
-                Text("  Manage wallet connection")
-            }
         }
 
         if (!error.isNullOrBlank()) {
