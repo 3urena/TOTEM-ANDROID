@@ -297,7 +297,7 @@ fun ChatScreen(
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        IconButton(onClick = { drawerState.close() }) {
+                        IconButton(onClick = { scope.launch { drawerState.close() } }) {
                             Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Close history", tint = TextSecondary)
                         }
                     }
