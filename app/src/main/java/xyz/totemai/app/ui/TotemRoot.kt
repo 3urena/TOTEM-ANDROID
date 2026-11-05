@@ -7,6 +7,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -40,6 +43,7 @@ import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.web.TotemWebHost
 import xyz.totemai.app.web.WebController
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TotemRoot(
     activity: ComponentActivity,
@@ -85,15 +89,18 @@ fun TotemRoot(
     Box(
         Modifier
             .fillMaxSize()
+            .imePadding()
             .background(Ink)
     ) {
         Scaffold(
             containerColor = Ink,
             bottomBar = {
-                TotemBottomBar(
-                    current = route,
-                    onSelect = { target -> navController.navigateToTab(target) }
-                )
+                if (!WindowInsets.isImeVisible) {
+                    TotemBottomBar(
+                        current = route,
+                        onSelect = { target -> navController.navigateToTab(target) }
+                    )
+                }
             }
         ) { inner ->
             Box(
