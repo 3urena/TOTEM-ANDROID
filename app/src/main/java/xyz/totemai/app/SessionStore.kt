@@ -42,6 +42,10 @@ class SessionStore private constructor(context: Context) {
 
     @Synchronized
     fun save(token: String, user: String?) {
+        val previousToken = token()
+        if (!previousToken.isNullOrBlank() && previousToken != token) {
+            clearDeviceToken()
+        }
         val p = prefs()
         if (p == null) {
             memoryToken = token
