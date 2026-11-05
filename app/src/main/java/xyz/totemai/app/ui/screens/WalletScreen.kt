@@ -66,7 +66,8 @@ import java.util.Locale
 fun WalletScreen(
     store: SessionStore,
     signedIn: Boolean,
-    onSignIn: () -> Unit
+    onSignIn: () -> Unit,
+    refreshTrigger: Int = 0
 ) {
     val api = remember(store) { TotemApi(store) }
     val scope = rememberCoroutineScope()
@@ -77,7 +78,7 @@ fun WalletScreen(
     var showLinkInfo by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(signedIn, refreshKey) {
+    LaunchedEffect(signedIn, refreshKey, refreshTrigger) {
         if (!signedIn) {
             credits = null
             wallet = null
