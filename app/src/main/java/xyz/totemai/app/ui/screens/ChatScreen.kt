@@ -232,7 +232,7 @@ fun ChatScreen(
                 ).collect { event ->
                     when (event) {
                         is TotemChatStreamEvent.Text -> {
-                            responseText += event.value
+                            responseText = if (event.replace) event.value else responseText + event.value
                             messages = messages.map { item ->
                                 if (item.id == assistantId) item.copy(text = responseText) else item
                             }
