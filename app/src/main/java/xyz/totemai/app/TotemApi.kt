@@ -56,7 +56,50 @@ sealed interface TotemChatStreamEvent {
  * as credits and wallet balance use the signed-in account session token.
  */
 class TotemApi(private val store: SessionStore) {
+    data class AuthConfig(val multiUser: Boolean, val requiresAuth: Boolean)
+
     private val apiBase = TotemConfig.ORIGIN + "/api"
+
+    /** Reads only the public authentication flags required to choose the login form. */
+    suspend fun authConfig(): AuthConfig {
+        val response = request("GET", "/setup-complete")
+        val settings = response.optJSONObject("results")
+            ?: throw IllegalStateException("The TOTEM server did not return its sign-in settings.")
+        return AuthConfig(
+            multiUser = settings.optBoolean("MultiUserMode", false),
+            requiresAuth = settings.optBoolean("RequiresAuth", false)
+        )
+    }
+
+    /** Uses the same official session endpoint as the hosted TOTEM login page. */
+    suspend fun signIn(
+        username: String,
+        password: String,
+        multiUser: Boolean
+    ): TotemLoginResult {
+        val body = JSONObject().put("password", password)
+        if (multiUser) body.put("username", username)
+        val response = request("POST", "/request-token", body = body)
+        val valid = response.optBoolean("valid", false)
+        val token = response.optString("token").takeIf { it.isNotBlank() && it != "null" }
+        val user = response.optJSONObject("user")
+        val codes = response.optJSONArray("recoveryCodes")
+        val recoveryCodes = buildList {
+            if (codes != null) {
+                for (index in 0 until codes.length()) {
+                    val code = codes.optString(index)
+                    if (code.isNotBlank()) add(code)
+                }
+            }
+        }
+        return TotemLoginResult(
+            valid = valid && !token.isNullOrBlank(),
+            token = token,
+            userJson = user?.toString(),
+            recoveryCodes = recoveryCodes,
+            message = response.optString("message").takeIf { it.isNotBlank() && it != "null" }
+        )
+    }
 
     suspend fun workspaces(): List<TotemWorkspace> {
         val token = ensureDeviceToken()
