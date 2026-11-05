@@ -7,10 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import xyz.totemai.app.ui.TotemRoot
 import xyz.totemai.app.ui.theme.TotemTheme
-import xyz.totemai.app.web.WebController
 
 class TotemActivity : ComponentActivity() {
-    private lateinit var controller: WebController
     private lateinit var events: NavEvents
     private lateinit var store: SessionStore
     private lateinit var monitor: NetworkMonitor
@@ -23,14 +21,12 @@ class TotemActivity : ComponentActivity() {
         store = TotemApp.instance.sessionStore
         monitor = TotemApp.instance.networkMonitor
         events = NavEvents()
-        controller = WebController(store, savedInstanceState)
         readIntent(intent, first = true)
 
         setContent {
             TotemTheme {
                 TotemRoot(
                     activity = this,
-                    controller = controller,
                     events = events,
                     store = store,
                     monitor = monitor,
@@ -44,11 +40,6 @@ class TotemActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         readIntent(intent, first = false)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        controller.saveState(outState)
-        super.onSaveInstanceState(outState)
     }
 
     private fun readIntent(intent: Intent?, first: Boolean) {
