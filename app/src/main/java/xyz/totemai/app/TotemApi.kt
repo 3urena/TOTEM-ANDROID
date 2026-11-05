@@ -1,13 +1,24 @@
 package xyz.totemai.app
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 
 data class TotemWorkspace(
     val slug: String,
@@ -50,9 +61,25 @@ data class TotemLoginResult(
 )
 
 sealed interface TotemChatStreamEvent {
-    data class Text(val value: String) : TotemChatStreamEvent
+    data class Text(val value: String, val replace: Boolean = false) : TotemChatStreamEvent
     data class Failed(val message: String) : TotemChatStreamEvent
     data object Finished : TotemChatStreamEvent
+}
+
+private data class ParsedSseEvent(
+    val event: TotemChatStreamEvent? = null,
+    val agentInvocationId: String? = null
+)
+
+private class AgentSession(
+    val workspaceSlug: String,
+    val threadSlug: String,
+    @Volatile var sink: SendChannel<TotemChatStreamEvent>?,
+    @Volatile var turnCompletion: CompletableDeferred<Unit>?
+) {
+    @Volatile var socket: WebSocket? = null
+    @Volatile var awaitingFeedback: Boolean = false
+    @Volatile var streamingSeen: Boolean = false
 }
 
 /**
@@ -65,6 +92,11 @@ class TotemApi(private val store: SessionStore) {
     data class AuthConfig(val multiUser: Boolean, val requiresAuth: Boolean)
 
     private val apiBase = TotemConfig.ORIGIN + "/api"
+    private val webSocketClient = OkHttpClient.Builder()
+        .pingInterval(30, TimeUnit.SECONDS)
+        .build()
+    private val agentLock = Any()
+    @Volatile private var activeAgentSession: AgentSession? = null
 
     /** Reads only the public authentication flags required to choose the login form. */
     suspend fun authConfig(): AuthConfig {
@@ -276,17 +308,59 @@ class TotemApi(private val store: SessionStore) {
         threadSlug: String,
         message: String
     ): Flow<TotemChatStreamEvent> = channelFlow {
+        val producer = this
         val session = requireSession()
-        withContext(Dispatchers.IO) {
-            val chatPath = if (threadSlug.isBlank() || threadSlug == DEFAULT_THREAD) {
-                "/workspace/$workspaceSlug/stream-chat"
-            } else {
-                "/workspace/$workspaceSlug/thread/$threadSlug/stream-chat"
-            }
-            val body = JSONObject()
-                .put("message", message)
-                .put("attachments", JSONArray())
+        val normalizedThread = threadSlug.ifBlank { DEFAULT_THREAD }
 
+        // Agent mode keeps a WebSocket open while it waits for the next user
+        // turn. Reuse that socket for this same workspace/thread instead of
+        // starting a second HTTP request that the server will route elsewhere.
+        val existingAgent = synchronized(agentLock) { activeAgentSession }
+        if (existingAgent != null &&
+            existingAgent.workspaceSlug == workspaceSlug &&
+            existingAgent.threadSlug == normalizedThread &&
+            existingAgent.awaitingFeedback &&
+            existingAgent.socket != null
+        ) {
+            val completion = CompletableDeferred<Unit>()
+            synchronized(agentLock) {
+                if (activeAgentSession !== existingAgent || !existingAgent.awaitingFeedback) {
+                    throw IllegalStateException("The TOTEM agent session is no longer waiting for a message.")
+                }
+                existingAgent.sink = producer
+                existingAgent.turnCompletion = completion
+                existingAgent.awaitingFeedback = false
+            }
+
+            val feedback = JSONObject()
+                .put("type", "awaitingFeedback")
+                .put("feedback", message)
+                .put("attachments", JSONArray())
+                .toString()
+            if (existingAgent.socket?.send(feedback) != true) {
+                closeAgentSession(existingAgent, "Could not send the next message to the TOTEM agent.")
+                throw IllegalStateException("The TOTEM agent connection was lost. Please send your message again.")
+            }
+            awaitAgentTurn(existingAgent, completion)
+            return@channelFlow
+        }
+
+        // An agent session belonging to another conversation must never
+        // receive a message intended for this one.
+        if (existingAgent != null) {
+            closeAgentSession(existingAgent, "Conversation changed.")
+        }
+
+        val chatPath = if (normalizedThread == DEFAULT_THREAD) {
+            "/workspace/" + workspaceSlug + "/stream-chat"
+        } else {
+            "/workspace/" + workspaceSlug + "/thread/" + normalizedThread + "/stream-chat"
+        }
+        val body = JSONObject()
+            .put("message", message)
+            .put("attachments", JSONArray())
+
+        val result = withContext(Dispatchers.IO) {
             val connection = (URL(apiBase + chatPath)
                 .openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -296,7 +370,21 @@ class TotemApi(private val store: SessionStore) {
                 setRequestProperty("Accept", "text/event-stream")
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Cache-Control", "no-cache")
-                setRequestProperty("Authorization", "Bearer $session")
+                setRequestProperty("Authorization", "Bearer " + session)
+            }
+
+            var agentInvocationId: String? = null
+            var finished = false
+
+            suspend fun consumeSseData(raw: String) {
+                val parsed = parseStreamEvent(raw)
+                if (!parsed.agentInvocationId.isNullOrBlank()) {
+                    agentInvocationId = parsed.agentInvocationId
+                }
+                parsed.event?.let { event ->
+                    producer.send(event)
+                    if (event is TotemChatStreamEvent.Finished) finished = true
+                }
             }
 
             try {
@@ -310,8 +398,7 @@ class TotemApi(private val store: SessionStore) {
                 }
 
                 val reader = connection.inputStream.bufferedReader(Charsets.UTF_8)
-                var data = StringBuilder()
-                var finished = false
+                val data = StringBuilder()
                 while (true) {
                     val line = reader.readLine() ?: break
                     when {
@@ -321,28 +408,205 @@ class TotemApi(private val store: SessionStore) {
                         }
                         line.isBlank() -> {
                             if (data.isNotEmpty()) {
-                                val event = parseStreamEvent(data.toString())
-                                if (event != null) {
-                                    send(event)
-                                    if (event is TotemChatStreamEvent.Finished) finished = true
-                                }
-                                data = StringBuilder()
+                                consumeSseData(data.toString())
+                                data.setLength(0)
                             }
                         }
                     }
                 }
-                if (data.isNotEmpty()) {
-                    val event = parseStreamEvent(data.toString())
-                    if (event != null) {
-                        send(event)
-                        if (event is TotemChatStreamEvent.Finished) finished = true
-                    }
-                }
-                if (!finished) send(TotemChatStreamEvent.Finished)
+                if (data.isNotEmpty()) consumeSseData(data.toString())
             } finally {
                 connection.disconnect()
             }
+            agentInvocationId to finished
         }
+
+        val invocationId = result.first
+        if (!invocationId.isNullOrBlank()) {
+            startAgentSession(invocationId, workspaceSlug, normalizedThread, producer)
+        } else if (!result.second) {
+            producer.send(TotemChatStreamEvent.Finished)
+        }
+    }
+
+    private suspend fun startAgentSession(
+        invocationId: String,
+        workspaceSlug: String,
+        threadSlug: String,
+        producer: SendChannel<TotemChatStreamEvent>
+    ) {
+        val completion = CompletableDeferred<Unit>()
+        val agent = AgentSession(workspaceSlug, threadSlug, producer, completion)
+        val socketBase = apiBase
+            .replaceFirst("https://", "wss://")
+            .replaceFirst("http://", "ws://")
+        val request = Request.Builder()
+            .url(socketBase + "/agent-invocation/" + invocationId)
+            .build()
+
+        synchronized(agentLock) {
+            activeAgentSession?.let { previous ->
+                previous.socket?.close(1000, "Replacing agent session")
+            }
+            activeAgentSession = agent
+        }
+
+        val listener = object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                handleAgentSocketMessage(agent, text)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                val detail = t.message?.takeIf { it.isNotBlank() }
+                    ?: "The TOTEM agent WebSocket connection failed."
+                finishAgentTurn(agent, TotemChatStreamEvent.Failed(detail), keepSession = false)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                finishAgentTurn(agent, null, keepSession = false)
+            }
+        }
+
+        agent.socket = webSocketClient.newWebSocket(request, listener)
+        awaitAgentTurn(agent, completion)
+    }
+
+    private suspend fun awaitAgentTurn(
+        agent: AgentSession,
+        completion: CompletableDeferred<Unit>
+    ) {
+        try {
+            withTimeout(10 * 60 * 1000L) {
+                completion.await()
+            }
+        } catch (e: TimeoutCancellationException) {
+            closeAgentSession(agent, "The TOTEM agent took too long to respond.")
+            throw IllegalStateException("The TOTEM agent took too long to respond. Please try again.")
+        } catch (e: CancellationException) {
+            closeAgentSession(agent, "Chat screen closed.")
+            throw e
+        }
+    }
+
+    private fun handleAgentSocketMessage(agent: AgentSession, raw: String) {
+        if (synchronized(agentLock) { activeAgentSession !== agent }) return
+        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val type = json.optString("type")
+
+        when (type) {
+            "WAITING_ON_INPUT" -> {
+                finishAgentTurn(agent, null, keepSession = true)
+            }
+            "reportStreamEvent" -> {
+                agent.streamingSeen = true
+                val content = json.optJSONObject("content") ?: return
+                val eventType = content.optString("type")
+                val text = if (content.isNull("content")) "" else content.optString("content")
+                val sink = agent.sink
+                when (eventType) {
+                    "textResponseChunk" -> if (text.isNotEmpty()) {
+                        sink?.trySend(TotemChatStreamEvent.Text(text))
+                    }
+                    "fullTextResponse" -> if (text.isNotBlank()) {
+                        sink?.trySend(TotemChatStreamEvent.Text(text, replace = true))
+                    }
+                }
+            }
+            "wssFailure" -> {
+                val detail = json.optString("content")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: "The TOTEM agent failed."
+                finishAgentTurn(agent, TotemChatStreamEvent.Failed(detail), keepSession = false)
+                agent.socket?.close(1011, "Agent failed")
+            }
+            "toolApprovalRequest" -> {
+                val requestId = json.optString("requestId")
+                val skillName = json.optString("skillName").ifBlank { "requested tool" }
+                // Never approve an agent action implicitly. Reject the request
+                // and allow the agent to continue with the rest of its answer.
+                if (requestId.isNotBlank()) {
+                    agent.socket?.send(
+                        JSONObject()
+                            .put("type", "toolApprovalResponse")
+                            .put("requestId", requestId)
+                            .put("approved", false)
+                            .toString()
+                    )
+                    agent.sink?.trySend(
+                        TotemChatStreamEvent.Text("[Mobile app did not approve: " + skillName + ".]\n")
+                    )
+                }
+            }
+            "clarificationRequest" -> {
+                val requestId = json.optString("requestId")
+                if (requestId.isNotBlank() && json.optBoolean("allowSkip", true)) {
+                    agent.socket?.send(
+                        JSONObject()
+                            .put("type", "clarificationResponse")
+                            .put("requestId", requestId)
+                            .put("skipped", true)
+                            .toString()
+                    )
+                } else {
+                    finishAgentTurn(
+                        agent,
+                        TotemChatStreamEvent.Failed(
+                            "The agent needs an interactive clarification that this mobile chat screen does not currently support."
+                        ),
+                        keepSession = false
+                    )
+                    agent.socket?.close(1000, "Clarification requires UI")
+                }
+            }
+            "statusResponse", "rename_thread", "fileDownloadCard", "rechartVisualize" -> Unit
+            else -> {
+                // Some providers return a single non-streaming agent message
+                // rather than reportStreamEvent chunks.
+                if (!agent.streamingSeen && !json.isNull("content")) {
+                    val text = json.optString("content")
+                    if (text.isNotBlank() && text != "null") {
+                        agent.sink?.trySend(TotemChatStreamEvent.Text(text))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun finishAgentTurn(
+        agent: AgentSession,
+        event: TotemChatStreamEvent?,
+        keepSession: Boolean
+    ) {
+        val sink: SendChannel<TotemChatStreamEvent>?
+        val completion: CompletableDeferred<Unit>?
+        synchronized(agentLock) {
+            if (activeAgentSession !== agent) return
+            sink = agent.sink
+            completion = agent.turnCompletion
+            agent.sink = null
+            agent.turnCompletion = null
+            agent.awaitingFeedback = keepSession
+            if (!keepSession) activeAgentSession = null
+        }
+
+        event?.let { sink?.trySend(it) }
+        if (event !is TotemChatStreamEvent.Failed) {
+            sink?.trySend(TotemChatStreamEvent.Finished)
+        }
+        completion?.complete(Unit)
+    }
+
+    private fun closeAgentSession(agent: AgentSession, reason: String) {
+        synchronized(agentLock) {
+            if (activeAgentSession === agent) activeAgentSession = null
+            agent.awaitingFeedback = false
+        }
+        agent.socket?.close(1000, reason.take(120))
+        val sink = agent.sink
+        agent.sink = null
+        agent.turnCompletion?.complete(Unit)
+        agent.turnCompletion = null
+        sink?.trySend(TotemChatStreamEvent.Failed(reason))
     }
 
     suspend fun credits(): Long {
@@ -415,25 +679,33 @@ class TotemApi(private val store: SessionStore) {
         return detail ?: "TOTEM request failed (HTTP $status)."
     }
 
-    private fun parseStreamEvent(raw: String): TotemChatStreamEvent? {
-        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    private fun parseStreamEvent(raw: String): ParsedSseEvent {
+        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return ParsedSseEvent()
         val type = json.optString("type")
 
-        // The hosted API also emits agent/tool status events. Those are control
-        // events, not assistant messages; only the documented text event types
-        // may be rendered as chat content.
         return when (type) {
+            "agentInitWebsocketConnection" -> {
+                val id = json.optString("websocketUUID")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                ParsedSseEvent(agentInvocationId = id)
+            }
             "textResponseChunk", "textResponse" -> {
                 val text = if (json.isNull("textResponse")) "" else json.optString("textResponse")
-                if (text.isBlank() || text == "null") null else TotemChatStreamEvent.Text(text)
+                if (text.isBlank() || text == "null") ParsedSseEvent()
+                else ParsedSseEvent(TotemChatStreamEvent.Text(text))
             }
-            "abort" -> TotemChatStreamEvent.Failed(
-                if (json.isNull("error")) ""
-                else json.optString("error").takeIf { it.isNotBlank() && it != "false" }.orEmpty()
-                    .ifBlank { "The TOTEM server stopped before completing the answer." }
-            )
-            "finalizeResponseStream" -> TotemChatStreamEvent.Finished
-            else -> null
+            "abort" -> {
+                val message = if (json.isNull("error")) "" else json.optString("error")
+                ParsedSseEvent(
+                    TotemChatStreamEvent.Failed(
+                        message.takeIf { it.isNotBlank() && it != "false" && it != "null" }
+                            ?: "The TOTEM server stopped before completing the answer."
+                    )
+                )
+            }
+            "finalizeResponseStream" -> ParsedSseEvent(TotemChatStreamEvent.Finished)
+            // Agent handoff/status events are control messages, not assistant text.
+            else -> ParsedSseEvent()
         }
     }
 
