@@ -25,7 +25,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val TABS = listOf(
     Tab(Routes.HOME, "Home", Icons.Default.Home),
-    Tab(Routes.WORKSPACE, "Workspace", Icons.Default.Send),
+    Tab(Routes.WORKSPACE, "Chat", Icons.Default.Send),
     Tab(Routes.WALLET, "Wallet", Icons.Default.Lock),
     Tab(Routes.PROFILE, "Profile", Icons.Default.Person)
 )
