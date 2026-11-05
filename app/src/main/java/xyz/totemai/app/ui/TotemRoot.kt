@@ -7,9 +7,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -43,7 +43,6 @@ import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.web.TotemWebHost
 import xyz.totemai.app.web.WebController
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TotemRoot(
     activity: ComponentActivity,
@@ -55,6 +54,7 @@ fun TotemRoot(
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val route = backStackEntry?.destination?.route ?: startTarget.route()
     var showSplash by remember { androidx.compose.runtime.mutableStateOf(true) }
     var sessionTick by remember { mutableIntStateOf(0) }
@@ -95,7 +95,7 @@ fun TotemRoot(
         Scaffold(
             containerColor = Ink,
             bottomBar = {
-                if (!WindowInsets.isImeVisible) {
+                if (!imeVisible) {
                     TotemBottomBar(
                         current = route,
                         onSelect = { target -> navController.navigateToTab(target) }
