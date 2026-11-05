@@ -41,6 +41,7 @@ import xyz.totemai.app.ui.screens.HomeScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
 import xyz.totemai.app.ui.screens.WalletScreen
+import xyz.totemai.app.ui.screens.WalletScreen
 import xyz.totemai.app.ui.theme.Ink
 
 @Composable
