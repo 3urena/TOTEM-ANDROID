@@ -33,12 +33,15 @@ import xyz.totemai.app.Routes
 import xyz.totemai.app.SessionStore
 import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.route
+import xyz.totemai.app.ui.screens.ChatScreen
 import xyz.totemai.app.ui.screens.HomeScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
+import xyz.totemai.app.ui.screens.WalletScreen
 import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.web.TotemWebHost
 import xyz.totemai.app.web.WebController
+import java.util.UUID
 
 @Composable
 fun TotemRoot(
@@ -52,18 +55,21 @@ fun TotemRoot(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route ?: startTarget.route()
+    val appLaunchId = remember { UUID.randomUUID().toString() }
     var showSplash by remember { androidx.compose.runtime.mutableStateOf(true) }
     var sessionTick by remember { mutableIntStateOf(0) }
+    var creditRefreshTick by remember { mutableIntStateOf(0) }
 
     val online by monitor.online.collectAsState()
     val signedIn = remember(sessionTick) { store.signedIn() }
     val displayName = remember(sessionTick) { readName(store.user()) }
-    val onWebRoute = route == Routes.WORKSPACE || route == Routes.WALLET
+    // The hosted site is used only for the sign-in handoff. Chat and Wallet
+    // themselves are native Compose screens.
+    val showingHostedLogin = route == Routes.WORKSPACE && !signedIn
 
-    LaunchedEffect(route) {
-        when (route) {
-            Routes.WORKSPACE -> controller.navigateTo(TotemConfig.WORKSPACE_URL)
-            Routes.WALLET -> controller.navigateTo(TotemConfig.WALLET_URL)
+    LaunchedEffect(route, signedIn) {
+        if (route == Routes.WORKSPACE && !signedIn) {
+            controller.navigateTo(TotemConfig.LOGIN_URL)
         }
     }
 
@@ -77,7 +83,7 @@ fun TotemRoot(
 
     BackHandler {
         when {
-            route == Routes.WORKSPACE && controller.canGoBack() -> controller.goBack()
+            showingHostedLogin && controller.canGoBack() -> controller.goBack()
             !navController.popBackStack() -> activity.finish()
         }
     }
@@ -130,15 +136,34 @@ fun TotemRoot(
                             }
                         )
                     }
-                    composable(Routes.WORKSPACE) { Box(Modifier.fillMaxSize()) }
-                    composable(Routes.WALLET) { Box(Modifier.fillMaxSize()) }
+                    composable(Routes.WORKSPACE) {
+                        if (signedIn) {
+                            ChatScreen(
+                                store = store,
+                                signedIn = true,
+                                launchId = appLaunchId,
+                                onSignIn = { controller.navigateTo(TotemConfig.LOGIN_URL) },
+                                onCreditsChanged = { creditRefreshTick++ }
+                            )
+                        } else {
+                            Box(Modifier.fillMaxSize())
+                        }
+                    }
+                    composable(Routes.WALLET) {
+                        WalletScreen(
+                            store = store,
+                            signedIn = signedIn,
+                            onSignIn = { navController.navigateToTab(Routes.WORKSPACE) },
+                            refreshTrigger = creditRefreshTick
+                        )
+                    }
                 }
 
                 TotemWebHost(
                     controller = controller,
                     store = store,
                     monitor = monitor,
-                    visible = onWebRoute,
+                    visible = showingHostedLogin,
                     onSessionChanged = { sessionTick++ }
                 )
             }
