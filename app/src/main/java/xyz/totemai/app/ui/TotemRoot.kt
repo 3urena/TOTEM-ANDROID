@@ -37,6 +37,7 @@ import xyz.totemai.app.Routes
 import xyz.totemai.app.SessionStore
 import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.route
+import xyz.totemai.app.ui.screens.ChatScreen
 import xyz.totemai.app.ui.screens.HomeScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
@@ -63,11 +64,10 @@ fun TotemRoot(
     val online by monitor.online.collectAsState()
     val signedIn = remember(sessionTick) { store.signedIn() }
     val displayName = remember(sessionTick) { readName(store.user()) }
-    val onWebRoute = route == Routes.WORKSPACE || route == Routes.WALLET
+    val onWebRoute = route == Routes.WALLET
 
     LaunchedEffect(route) {
         when (route) {
-            Routes.WORKSPACE -> controller.navigateTo(TotemConfig.WORKSPACE_URL)
             Routes.WALLET -> controller.navigateTo(TotemConfig.WALLET_URL)
         }
     }
@@ -82,7 +82,7 @@ fun TotemRoot(
 
     BackHandler {
         when {
-            route == Routes.WORKSPACE && controller.canGoBack() -> controller.goBack()
+            route == Routes.WALLET && controller.canGoBack() -> controller.goBack()
             !navController.popBackStack() -> activity.finish()
         }
     }
@@ -138,7 +138,14 @@ fun TotemRoot(
                             }
                         )
                     }
-                    composable(Routes.WORKSPACE) { Box(Modifier.fillMaxSize()) }
+                    composable(Routes.WORKSPACE) {
+                        ChatScreen(
+                            store = store,
+                            signedIn = signedIn,
+                            sessionVersion = sessionTick,
+                            onSessionChanged = { sessionTick++ }
+                        )
+                    }
                     composable(Routes.WALLET) { Box(Modifier.fillMaxSize()) }
                 }
 
