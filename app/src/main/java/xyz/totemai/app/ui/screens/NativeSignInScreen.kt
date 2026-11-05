@@ -49,10 +49,16 @@ import xyz.totemai.app.TotemApi
 import xyz.totemai.app.TotemLoginResult
 import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.ui.theme.InkElevated
-import xyz.totemai.app.ui.theme.Outline
 import xyz.totemai.app.ui.theme.TextPrimary
 import xyz.totemai.app.ui.theme.TextSecondary
 import xyz.totemai.app.ui.theme.Violet
+
+private enum class SignInPage {
+    LOGIN,
+    SIGN_UP,
+    RECOVER,
+    RESET
+}
 
 @Composable
 fun NativeSignInScreen(
@@ -65,10 +71,24 @@ fun NativeSignInScreen(
 
     var authConfig by remember { mutableStateOf<TotemApi.AuthConfig?>(null) }
     var configLoading by remember { mutableStateOf(true) }
+    var canSignUp by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(SignInPage.LOGIN) }
+
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var signUpUsername by remember { mutableStateOf("") }
+    var signUpPassword by remember { mutableStateOf("") }
+    var recoveryUsername by remember { mutableStateOf("") }
+    var recoveryCodeOne by remember { mutableStateOf("") }
+    var recoveryCodeTwo by remember { mutableStateOf("") }
+    var resetPassword by remember { mutableStateOf("") }
+    var confirmResetPassword by remember { mutableStateOf("") }
+    var resetToken by remember { mutableStateOf<String?>(null) }
+
     var error by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
     var recoveryCodes by remember { mutableStateOf<List<String>>(emptyList()) }
     var pendingToken by remember { mutableStateOf<String?>(null) }
     var pendingUser by remember { mutableStateOf<String?>(null) }
@@ -97,14 +117,29 @@ fun NativeSignInScreen(
         }
     }
 
+    fun loadAuthSettings() {
+        scope.launch {
+            configLoading = true
+            error = null
+            try {
+                authConfig = api.authConfig()
+                canSignUp = runCatching { api.publicRegistrationEnabled() }.getOrDefault(false)
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load sign-in settings."
+            } finally {
+                configLoading = false
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
-            val config = api.authConfig()
-            authConfig = config
-            if (!config.multiUser && !config.requiresAuth) {
+            authConfig = api.authConfig()
+            canSignUp = runCatching { api.publicRegistrationEnabled() }.getOrDefault(false)
+            val config = authConfig
+            if (config != null && !config.multiUser && !config.requiresAuth) {
                 loading = true
-                val result = api.signIn(username = "", password = "", multiUser = false)
-                applyLoginResult(result)
+                applyLoginResult(api.signIn(username = "", password = "", multiUser = false))
                 loading = false
             }
         } catch (e: Exception) {
@@ -114,20 +149,21 @@ fun NativeSignInScreen(
         }
     }
 
-    fun submit() {
+    fun submitLogin() {
         val config = authConfig ?: return
         if (loading) return
         if (config.multiUser && username.isBlank()) {
             error = "Enter your username or email."
             return
         }
-        if (config.requiresAuth && password.isBlank()) {
+        if ((config.requiresAuth || config.multiUser) && password.isBlank()) {
             error = "Enter your password."
             return
         }
         scope.launch {
             loading = true
             error = null
+            successMessage = null
             try {
                 applyLoginResult(
                     api.signIn(
@@ -138,6 +174,83 @@ fun NativeSignInScreen(
                 )
             } catch (e: Exception) {
                 error = e.message ?: "Could not sign in to TOTEM."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun submitRegistration() {
+        if (loading) return
+        if (signUpUsername.isBlank() || email.isBlank() || signUpPassword.length < 8) {
+            error = "Enter a username, valid email and password with at least 8 characters."
+            return
+        }
+        scope.launch {
+            loading = true
+            error = null
+            successMessage = null
+            try {
+                api.registerUser(signUpUsername.trim(), email.trim(), signUpPassword)
+                username = signUpUsername.trim()
+                password = ""
+                page = SignInPage.LOGIN
+                successMessage = "Account created. Sign in with your username or email."
+            } catch (e: Exception) {
+                error = e.message ?: "Could not create the account."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun submitRecovery() {
+        if (loading) return
+        if (recoveryUsername.isBlank() || recoveryCodeOne.isBlank() || recoveryCodeTwo.isBlank()) {
+            error = "Enter your username and both recovery codes."
+            return
+        }
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                resetToken = api.recoverAccount(
+                    recoveryUsername.trim(),
+                    listOf(recoveryCodeOne.trim(), recoveryCodeTwo.trim())
+                )
+                page = SignInPage.RESET
+            } catch (e: Exception) {
+                error = e.message ?: "Account recovery failed."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun submitPasswordReset() {
+        val token = resetToken ?: return
+        if (loading) return
+        if (resetPassword.length < 8) {
+            error = "Your new password must contain at least 8 characters."
+            return
+        }
+        if (resetPassword != confirmResetPassword) {
+            error = "The passwords do not match."
+            return
+        }
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                api.resetPassword(token, resetPassword, confirmResetPassword)
+                resetToken = null
+                resetPassword = ""
+                confirmResetPassword = ""
+                password = ""
+                page = SignInPage.LOGIN
+                successMessage = "Password reset successfully. Sign in with your new password."
+            } catch (e: Exception) {
+                error = e.message ?: "Could not reset your password."
             } finally {
                 loading = false
             }
@@ -174,110 +287,243 @@ fun NativeSignInScreen(
                 )
             }
             Spacer(Modifier.height(22.dp))
-            Text(
-                text = "WELCOME BACK",
-                color = TextPrimary,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(7.dp))
-            Text(
-                text = "Sign in securely to your TOTEM account",
-                color = TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(30.dp))
 
-            when {
-                configLoading -> CircularProgressIndicator(color = Violet)
-                authConfig == null -> {
+            when (page) {
+                SignInPage.LOGIN -> {
                     Text(
-                        text = error ?: "The sign-in service is unavailable.",
-                        color = Color(0xFFFF8585),
+                        text = "WELCOME BACK",
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        text = "Sign in securely to your TOTEM account",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(14.dp))
-                    TextButton(onClick = {
-                        configLoading = true
-                        error = null
-                        scope.launch {
-                            try {
-                                authConfig = api.authConfig()
-                            } catch (e: Exception) {
-                                error = e.message ?: "Could not load sign-in settings."
-                            } finally {
-                                configLoading = false
+                    Spacer(Modifier.height(30.dp))
+
+                    when {
+                        configLoading -> CircularProgressIndicator(color = Violet)
+                        authConfig == null -> {
+                            Text(
+                                text = error ?: "The sign-in service is unavailable.",
+                                color = Color(0xFFFF8585),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            TextButton(onClick = { loadAuthSettings() }) {
+                                Text("Try again", color = Violet)
                             }
                         }
-                    }) { Text("Try again", color = Violet) }
-                }
-                else -> {
-                    if (authConfig?.multiUser == true) {
-                        OutlinedTextField(
-                            value = username,
-                            onValueChange = { username = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Username or email") },
-                            placeholder = { Text("Enter your username or email") },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Email,
-                                imeAction = ImeAction.Next
-                            )
-                        )
-                        Spacer(Modifier.height(14.dp))
+                        else -> {
+                            if (authConfig?.multiUser == true) {
+                                SignInField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = "Username or email",
+                                    keyboardType = KeyboardType.Email,
+                                    imeAction = ImeAction.Next
+                                )
+                                Spacer(Modifier.height(14.dp))
+                            }
+
+                            if (authConfig?.requiresAuth == true || authConfig?.multiUser == true) {
+                                SignInField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    label = "Password",
+                                    password = true,
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Done
+                                )
+                                Spacer(Modifier.height(18.dp))
+                            }
+
+                            Button(
+                                onClick = { submitLogin() },
+                                enabled = !loading,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Violet,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                if (loading) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text("SIGN IN", fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (authConfig?.multiUser == true) {
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(
+                                    onClick = {
+                                        error = null
+                                        successMessage = null
+                                        page = SignInPage.RECOVER
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Forgot password? Reset with recovery codes", color = Violet)
+                                }
+                            }
+
+                            if (canSignUp) {
+                                TextButton(
+                                    onClick = {
+                                        error = null
+                                        successMessage = null
+                                        page = SignInPage.SIGN_UP
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Create a new account", color = Violet)
+                                }
+                            }
+                        }
                     }
 
-                    if (authConfig?.requiresAuth == true || authConfig?.multiUser == true) {
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Password") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done
-                            )
+                    if (!successMessage.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = successMessage.orEmpty(),
+                            color = Color(0xFF8FE0A0),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center
                         )
-                        Spacer(Modifier.height(18.dp))
                     }
-
-                    if (!error.isNullOrBlank()) {
+                    if (!error.isNullOrBlank() && authConfig != null) {
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             text = error.orEmpty(),
                             color = Color(0xFFFF8585),
                             style = MaterialTheme.typography.bodySmall,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            textAlign = TextAlign.Center
                         )
-                        Spacer(Modifier.height(12.dp))
                     }
+                }
 
-                    Button(
-                        onClick = { submit() },
-                        enabled = !loading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(15.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Violet,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("SIGN IN", fontWeight = FontWeight.Bold)
-                        }
-                    }
+                SignInPage.SIGN_UP -> {
+                    AuthPageTitle(
+                        title = "CREATE ACCOUNT",
+                        description = "Create a TOTEM account with your username and email"
+                    )
+                    SignInField(
+                        value = signUpUsername,
+                        onValueChange = { signUpUsername = it },
+                        label = "Username",
+                        imeAction = ImeAction.Next
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    SignInField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = "Email",
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    SignInField(
+                        value = signUpPassword,
+                        onValueChange = { signUpPassword = it },
+                        label = "Password (at least 8 characters)",
+                        password = true,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    AuthActionButton("CREATE ACCOUNT", loading) { submitRegistration() }
+                    TextButton(
+                        onClick = {
+                            error = null
+                            page = SignInPage.LOGIN
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Back to sign in", color = Violet) }
+                    AuthError(error)
+                }
+
+                SignInPage.RECOVER -> {
+                    AuthPageTitle(
+                        title = "RESET PASSWORD",
+                        description = "Enter your username and the two recovery codes saved when you first signed in"
+                    )
+                    SignInField(
+                        value = recoveryUsername,
+                        onValueChange = { recoveryUsername = it },
+                        label = "Username",
+                        imeAction = ImeAction.Next
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    SignInField(
+                        value = recoveryCodeOne,
+                        onValueChange = { recoveryCodeOne = it },
+                        label = "Recovery code 1",
+                        imeAction = ImeAction.Next
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    SignInField(
+                        value = recoveryCodeTwo,
+                        onValueChange = { recoveryCodeTwo = it },
+                        label = "Recovery code 2",
+                        imeAction = ImeAction.Done
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    AuthActionButton("CONTINUE", loading) { submitRecovery() }
+                    TextButton(
+                        onClick = {
+                            error = null
+                            page = SignInPage.LOGIN
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Back to sign in", color = Violet) }
+                    AuthError(error)
+                }
+
+                SignInPage.RESET -> {
+                    AuthPageTitle(
+                        title = "CHOOSE A NEW PASSWORD",
+                        description = "Enter and confirm your new password"
+                    )
+                    SignInField(
+                        value = resetPassword,
+                        onValueChange = { resetPassword = it },
+                        label = "New password",
+                        password = true,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Next
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    SignInField(
+                        value = confirmResetPassword,
+                        onValueChange = { confirmResetPassword = it },
+                        label = "Confirm new password",
+                        password = true,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    AuthActionButton("SAVE NEW PASSWORD", loading) { submitPasswordReset() }
+                    TextButton(
+                        onClick = {
+                            error = null
+                            resetToken = null
+                            page = SignInPage.LOGIN
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Cancel", color = Violet) }
+                    AuthError(error)
                 }
             }
 
@@ -320,6 +566,93 @@ fun NativeSignInScreen(
             containerColor = InkElevated,
             titleContentColor = TextPrimary,
             textContentColor = TextSecondary
+        )
+    }
+}
+
+@Composable
+private fun AuthPageTitle(title: String, description: String) {
+    Text(
+        text = title,
+        color = TextPrimary,
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(7.dp))
+    Text(
+        text = description,
+        color = TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(26.dp))
+}
+
+@Composable
+private fun SignInField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    password: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Next
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(label) },
+        visualTransformation = if (password) PasswordVisualTransformation()
+            else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = imeAction
+        )
+    )
+}
+
+@Composable
+private fun AuthActionButton(
+    label: String,
+    loading: Boolean,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        enabled = !loading,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(15.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Violet,
+            contentColor = Color.White
+        )
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                color = Color.White,
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp
+            )
+        } else {
+            Text(label, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun AuthError(error: String?) {
+    if (!error.isNullOrBlank()) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = error,
+            color = Color(0xFFFF8585),
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

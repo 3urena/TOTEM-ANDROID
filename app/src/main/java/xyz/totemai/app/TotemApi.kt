@@ -1,7 +1,5 @@
 package xyz.totemai.app
 
-import android.net.Uri
-import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -60,8 +58,8 @@ sealed interface TotemChatStreamEvent {
 /**
  * Thin Android client for the official TOTEM hosted API.
  *
- * Chat commands use the server-issued mobile-device token. Account data such
- * as credits and wallet balance use the signed-in account session token.
+ * All account-scoped operations, including chat streaming, use the official
+ * signed-in account session token and the hosted platform's normal user APIs.
  */
 class TotemApi(private val store: SessionStore) {
     data class AuthConfig(val multiUser: Boolean, val requiresAuth: Boolean)
@@ -109,14 +107,78 @@ class TotemApi(private val store: SessionStore) {
         )
     }
 
-    suspend fun workspaces(): List<TotemWorkspace> {
-        val token = ensureDeviceToken()
+    /** Public signup is exposed only when the server admin enables it. */
+    suspend fun publicRegistrationEnabled(): Boolean {
+        val response = request("GET", "/system/public-registration")
+        return response.optBoolean("publicRegistration", false)
+    }
+
+    /** Creates a new account through the same public endpoint as the hosted login page. */
+    suspend fun registerUser(username: String, email: String, password: String) {
         val response = request(
             method = "POST",
-            path = "/mobile/send/workspaces",
-            deviceToken = token,
+            path = "/system/new-user",
             body = JSONObject()
+                .put("username", username)
+                .put("email", email)
+                .put("password", password)
         )
+        if (!response.optBoolean("success", false)) {
+            throw IllegalStateException(
+                response.optString("error").takeIf { it.isNotBlank() }
+                    ?: "Account registration failed."
+            )
+        }
+    }
+
+    /** Exchanges two saved recovery codes for a short-lived password-reset token. */
+    suspend fun recoverAccount(username: String, recoveryCodes: List<String>): String {
+        val codes = JSONArray()
+        recoveryCodes.forEach { codes.put(it) }
+        val response = request(
+            method = "POST",
+            path = "/system/recover-account",
+            body = JSONObject()
+                .put("username", username)
+                .put("recoveryCodes", codes)
+        )
+        val token = response.optString("resetToken")
+        if (!response.optBoolean("success", false) || token.isBlank()) {
+            throw IllegalStateException(
+                response.optString("message").takeIf { it.isNotBlank() }
+                    ?: "Account recovery failed."
+            )
+        }
+        return token
+    }
+
+    /** Completes password reset using the single-use token from account recovery. */
+    suspend fun resetPassword(token: String, newPassword: String, confirmPassword: String) {
+        val response = request(
+            method = "POST",
+            path = "/system/reset-password",
+            body = JSONObject()
+                .put("token", token)
+                .put("newPassword", newPassword)
+                .put("confirmPassword", confirmPassword)
+        )
+        if (!response.optBoolean("success", false)) {
+            throw IllegalStateException(
+                response.optString("error").takeIf { it.isNotBlank() }
+                    ?: response.optString("message").takeIf { it.isNotBlank() }
+                    ?: "Password reset failed."
+            )
+        }
+    }
+
+    /**
+     * Uses the authenticated account session directly. The normal workspace
+     * API supports every signed-in user; mobile-device registration is admin
+     * restricted on multi-user deployments and must not be a prerequisite.
+     */
+    suspend fun workspaces(): List<TotemWorkspace> {
+        val session = requireSession()
+        val response = request("GET", "/workspaces", bearer = session)
         val array = response.optJSONArray("workspaces") ?: JSONArray()
         return buildList {
             for (index in 0 until array.length()) {
@@ -129,89 +191,76 @@ class TotemApi(private val store: SessionStore) {
     }
 
     suspend fun workspaceContent(workspaceSlug: String): TotemWorkspaceSnapshot {
-        val token = ensureDeviceToken()
-        val response = request(
-            method = "POST",
-            path = "/mobile/send/workspace-content",
-            deviceToken = token,
-            body = JSONObject().put("workspaceSlug", workspaceSlug)
-        )
-        val rawThreads = response.optJSONArray("threads") ?: JSONArray()
-        val rawChats = response.optJSONArray("chats") ?: JSONArray()
+        val session = requireSession()
 
-        data class ThreadRow(val id: Long, val slug: String, val name: String)
-        val threadRows = ArrayList<ThreadRow>()
+        // The hosted client stores default-thread history separately from
+        // each named thread. These are the same account-scoped endpoints the
+        // official TOTEM web client uses.
+        val rawThreads = request(
+            "GET",
+            "/workspace/$workspaceSlug/threads",
+            bearer = session
+        ).optJSONArray("threads") ?: JSONArray()
+
+        val defaultHistory = request(
+            "GET",
+            "/workspace/$workspaceSlug/chats",
+            bearer = session
+        ).optJSONArray("history")
+        val messages = LinkedHashMap<String, List<TotemChatMessage>>()
+        messages[DEFAULT_THREAD] = parseHistory(defaultHistory, DEFAULT_THREAD)
+
+        val threads = ArrayList<TotemChatThread>()
+        val defaultPreview = messages[DEFAULT_THREAD]
+            ?.firstOrNull { it.fromUser }?.text.orEmpty()
+        threads.add(
+            TotemChatThread(
+                id = 0L,
+                slug = DEFAULT_THREAD,
+                title = if (defaultPreview.isNotBlank()) defaultPreview.take(44) else "Default Thread",
+                preview = defaultPreview
+            )
+        )
+
         for (index in 0 until rawThreads.length()) {
             val item = rawThreads.optJSONObject(index) ?: continue
             val slug = item.optString("slug")
             if (slug.isBlank()) continue
-            threadRows.add(
-                ThreadRow(
+
+            val history = request(
+                "GET",
+                "/workspace/$workspaceSlug/thread/$slug/chats",
+                bearer = session
+            ).optJSONArray("history")
+            val threadMessages = parseHistory(history, slug)
+            messages[slug] = threadMessages
+            val preview = threadMessages.firstOrNull { it.fromUser }?.text.orEmpty()
+            threads.add(
+                TotemChatThread(
                     id = item.optLong("id", 0L),
                     slug = slug,
-                    name = item.optString("name", "Chat")
+                    title = if (preview.isNotBlank()) preview.take(44)
+                        else item.optString("name", "New chat"),
+                    preview = preview
                 )
             )
         }
-        if (threadRows.none { it.slug == DEFAULT_THREAD }) {
-            threadRows.add(0, ThreadRow(0L, DEFAULT_THREAD, "Default Thread"))
-        }
-
-        val messages = LinkedHashMap<String, MutableList<TotemChatMessage>>()
-        val firstPrompts = HashMap<String, String>()
-        val slugById = threadRows.associate { it.id to it.slug }
-
-        for (index in 0 until rawChats.length()) {
-            val item = rawChats.optJSONObject(index) ?: continue
-            val threadId = if (item.isNull("thread_id")) 0L else item.optLong("thread_id", 0L)
-            val slug = slugById[threadId] ?: DEFAULT_THREAD
-            val bucket = messages.getOrPut(slug) { ArrayList() }
-            val prompt = item.optString("prompt")
-            if (prompt.isNotBlank()) {
-                bucket.add(
-                    TotemChatMessage(
-                        id = "u-${item.optString("id", index.toString())}",
-                        fromUser = true,
-                        text = prompt
-                    )
-                )
-                if (!firstPrompts.containsKey(slug)) firstPrompts[slug] = prompt
-            }
-
-            val responseText = responseText(item.opt("response"))
-            if (responseText.isNotBlank()) {
-                bucket.add(
-                    TotemChatMessage(
-                        id = "a-${item.optString("id", index.toString())}",
-                        fromUser = false,
-                        text = responseText
-                    )
-                )
-            }
-        }
-
-        val threads = threadRows.map { thread ->
-            val preview = firstPrompts[thread.slug].orEmpty()
-            val title = if (preview.isNotBlank()) preview.take(44) else thread.name
-            TotemChatThread(thread.id, thread.slug, title, preview)
-        }.sortedByDescending { it.id }
 
         return TotemWorkspaceSnapshot(
-            threads = threads,
-            messagesByThread = messages.mapValues { it.value.toList() }
+            threads = threads.sortedByDescending { it.id },
+            messagesByThread = messages
         )
     }
 
     suspend fun newThread(workspaceSlug: String): TotemChatThread {
-        val token = ensureDeviceToken()
+        val session = requireSession()
         val response = request(
             method = "POST",
-            path = "/mobile/send/new-thread",
-            deviceToken = token,
-            body = JSONObject().put("workspaceSlug", workspaceSlug)
+            path = "/workspace/$workspaceSlug/thread/new",
+            bearer = session
         )
         val thread = response.optJSONObject("thread")
-            ?: throw IllegalStateException("The server did not return the new chat.")
+            ?: throw IllegalStateException("The TOTEM server did not return the new chat.")
         val slug = thread.optString("slug")
         if (slug.isBlank()) throw IllegalStateException("The new chat has no ID.")
         return TotemChatThread(
@@ -227,14 +276,18 @@ class TotemApi(private val store: SessionStore) {
         threadSlug: String,
         message: String
     ): Flow<TotemChatStreamEvent> = channelFlow {
-        val token = ensureDeviceToken()
+        val session = requireSession()
         withContext(Dispatchers.IO) {
+            val chatPath = if (threadSlug.isBlank() || threadSlug == DEFAULT_THREAD) {
+                "/workspace/$workspaceSlug/stream-chat"
+            } else {
+                "/workspace/$workspaceSlug/thread/$threadSlug/stream-chat"
+            }
             val body = JSONObject()
-                .put("workspaceSlug", workspaceSlug)
                 .put("message", message)
-            if (threadSlug != DEFAULT_THREAD) body.put("threadSlug", threadSlug)
+                .put("attachments", JSONArray())
 
-            val connection = (URL(apiBase + "/mobile/send/stream-chat")
+            val connection = (URL(apiBase + chatPath)
                 .openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 20_000
@@ -243,7 +296,7 @@ class TotemApi(private val store: SessionStore) {
                 setRequestProperty("Accept", "text/event-stream")
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Cache-Control", "no-cache")
-                setRequestProperty(DEVICE_TOKEN_HEADER, token)
+                setRequestProperty("Authorization", "Bearer $session")
             }
 
             try {
@@ -311,86 +364,6 @@ class TotemApi(private val store: SessionStore) {
         )
     }
 
-    private suspend fun ensureDeviceToken(): String {
-        val saved = store.deviceToken()
-        if (!saved.isNullOrBlank()) {
-            val valid = runCatching {
-                request("GET", "/mobile/auth", deviceToken = saved)
-            }.isSuccess
-            if (valid) return saved
-            store.clearDeviceToken()
-        }
-
-        val session = requireSession()
-        val connectionInfo = request(
-            method = "GET",
-            path = "/mobile/connect-info",
-            bearer = session
-        )
-        val connectionUrl = connectionInfo.optString("connectionUrl")
-        if (connectionUrl.isBlank()) {
-            throw IllegalStateException("The TOTEM server did not provide a mobile registration link.")
-        }
-
-        val connectionUri = if (connectionUrl.startsWith("http")) {
-            Uri.parse(connectionUrl)
-        } else {
-            Uri.parse(TotemConfig.ORIGIN + connectionUrl)
-        }
-        val temporaryToken = connectionUri.getQueryParameter("t")
-            ?: throw IllegalStateException("The mobile registration link is missing its temporary token.")
-
-        val deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android device"
-        val registered = request(
-            method = "POST",
-            path = "/mobile/register",
-            bearer = temporaryToken,
-            body = JSONObject()
-                .put("deviceOs", "android")
-                .put("deviceName", deviceName)
-        )
-        val deviceToken = registered.optString("token")
-        if (deviceToken.isBlank()) {
-            throw IllegalStateException("The TOTEM server did not return a device token.")
-        }
-
-        // A newly registered device starts unapproved. The same authenticated
-        // admin session that issued connect-info approves this device.
-        val devicesResponse = request(
-            method = "GET",
-            path = "/mobile/devices",
-            bearer = session
-        )
-        val devices = devicesResponse.optJSONArray("devices") ?: JSONArray()
-        var deviceId: Long? = null
-        var alreadyApproved = false
-        for (index in 0 until devices.length()) {
-            val device = devices.optJSONObject(index) ?: continue
-            if (device.optString("deviceName") == deviceName &&
-                device.optString("token") == deviceToken
-            ) {
-                deviceId = device.optLong("id")
-                alreadyApproved = device.optBoolean("approved", false)
-                break
-            }
-        }
-        if (deviceId == null) {
-            throw IllegalStateException("The new device is registered but could not be found for approval.")
-        }
-        if (!alreadyApproved) {
-            request(
-                method = "POST",
-                path = "/mobile/update/$deviceId",
-                bearer = session,
-                body = JSONObject().put("approved", true)
-            )
-        }
-
-        request("GET", "/mobile/auth", deviceToken = deviceToken)
-        store.saveDeviceToken(deviceToken)
-        return deviceToken
-    }
-
     private suspend fun requireSession(): String =
         store.token()?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Please sign in to your TOTEM account first.")
@@ -399,7 +372,6 @@ class TotemApi(private val store: SessionStore) {
         method: String,
         path: String,
         bearer: String? = null,
-        deviceToken: String? = null,
         body: JSONObject? = null
     ): JSONObject = withContext(Dispatchers.IO) {
         val connection = (URL(apiBase + path).openConnection() as HttpURLConnection).apply {
@@ -408,7 +380,6 @@ class TotemApi(private val store: SessionStore) {
             readTimeout = 60_000
             setRequestProperty("Accept", "application/json")
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
-            deviceToken?.let { setRequestProperty(DEVICE_TOKEN_HEADER, it) }
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -464,21 +435,38 @@ class TotemApi(private val store: SessionStore) {
         }
     }
 
-    private fun responseText(value: Any?): String {
-        return when (value) {
-            is JSONObject -> value.optString("text").takeIf { it.isNotBlank() }
-                ?: value.optString("textResponse")
-            is String -> runCatching {
-                val json = JSONObject(value)
-                json.optString("text").takeIf { it.isNotBlank() }
-                    ?: json.optString("textResponse")
-            }.getOrDefault(value)
-            else -> ""
-        }.orEmpty()
+    private fun parseHistory(
+        history: JSONArray?,
+        threadKey: String
+    ): List<TotemChatMessage> {
+        if (history == null) return emptyList()
+        return buildList {
+            for (index in 0 until history.length()) {
+                val item = history.optJSONObject(index) ?: continue
+                val role = item.optString("role")
+                val text = item.optString("content")
+                if (text.isBlank()) continue
+                when (role) {
+                    "user" -> add(
+                        TotemChatMessage(
+                            id = "user-$threadKey-$index",
+                            fromUser = true,
+                            text = text
+                        )
+                    )
+                    "assistant" -> add(
+                        TotemChatMessage(
+                            id = "assistant-$threadKey-$index",
+                            fromUser = false,
+                            text = text
+                        )
+                    )
+                }
+            }
+        }
     }
 
     companion object {
         const val DEFAULT_THREAD = "default-thread"
-        private const val DEVICE_TOKEN_HEADER = "x-anythingllm-mobile-device-token"
     }
 }
