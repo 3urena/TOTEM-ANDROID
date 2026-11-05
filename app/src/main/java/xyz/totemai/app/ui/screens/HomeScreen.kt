@@ -142,7 +142,7 @@ fun HomeScreen(
         ActionRow(
             icon = Icons.Default.Lock,
             title = "Wallet connections",
-            subtitle = "Connect an external wallet through the hosted flow"
+            subtitle = "View credits and connected wallet"
         ) { onOpenWallet() }
 
         Spacer(Modifier.height(10.dp))
