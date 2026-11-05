@@ -94,6 +94,10 @@ class TotemApi(private val store: SessionStore) {
 
     private val apiBase = TotemConfig.ORIGIN + "/api"
     private val webSocketClient = OkHttpClient.Builder()
+        // OkHttp's default connection timeout is 10 seconds. The hosted
+        // endpoint may take longer to complete a WebSocket upgrade on mobile
+        // networks, so give the initial handshake a little more room.
+        .connectTimeout(30, TimeUnit.SECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
     private val agentLock = Any()
@@ -445,6 +449,8 @@ class TotemApi(private val store: SessionStore) {
             .replaceFirst("http://", "ws://")
         val request = Request.Builder()
             .url(socketBase + "/agent-invocation/" + invocationId)
+            // Match the Origin header sent by the official hosted web client.
+            .header("Origin", TotemConfig.ORIGIN)
             .build()
 
         synchronized(agentLock) {
