@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import xyz.totemai.app.TotemConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -13,29 +12,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 
-data class ApiWorkspace(
-    val id: String,
-    val name: String,
-    val slug: String
-)
-
-data class ApiThread(\n    val id: String,\n    val name: String,\n    val slug: String\n)\n\ndata class ApiMessage(\n    val id: String,
-    val role: String,
-    val content: String
-)
-
-data class CreditTransaction(
-    val id: String,
-    val type: String,
-    val amount: Long,
-    val createdAt: String
-)
-
-data class CreditsSnapshot(
-    val balance: Long,
-    val transactions: List<CreditTransaction>
-)
-
+data class ApiWorkspace(val id: String, val name: String, val slug: String)
+data class ApiThread(val id: String, val name: String, val slug: String)
+data class ApiMessage(val id: String, val role: String, val content: String)
+data class CreditTransaction(val id: String, val type: String, val amount: Long, val createdAt: String)
+data class CreditsSnapshot(val balance: Long, val transactions: List<CreditTransaction>)
 data class WalletSnapshot(
     val available: Boolean,
     val noWallet: Boolean = false,
@@ -43,82 +24,87 @@ data class WalletSnapshot(
     val symbol: String = "TOTEM",
     val error: String? = null
 )
-
-data class LoginResult(
-    val token: String,
-    val userJson: String?
-)
+data class LoginResult(val token: String, val userJson: String?)
 
 object TotemApi {
+    private const val API_BASE = "https://beta.totemai.xyz/api"
     private const val CONNECT_TIMEOUT_MS = 20_000
     private const val READ_TIMEOUT_MS = 60_000
-    private const val API_BASE = "https://beta.totemai.xyz/api"
 
     suspend fun login(identifier: String, password: String): LoginResult =
         withContext(Dispatchers.IO) {
             val body = JSONObject().put("password", password)
             if (identifier.isNotBlank()) body.put("username", identifier.trim())
-
-            val response = requestJson(
-                method = "POST",
-                path = "/request-token",
-                body = body
-            )
+            val response = requestJson("POST", "/request-token", body = body)
             if (!response.optBoolean("valid", false)) {
                 throw ApiException(response.optString("message").ifBlank { "Login was rejected by TOTEM." })
             }
-
             val token = response.optString("token").takeIf { it.isNotBlank() }
                 ?: throw ApiException("TOTEM did not return a session token.")
             val userJson = response.optJSONObject("user")?.toString()
                 ?: if (identifier.isNotBlank()) JSONObject().put("username", identifier.trim()).toString() else null
-
             LoginResult(token, userJson)
         }
 
     suspend fun getWorkspaces(token: String): List<ApiWorkspace> =
         withContext(Dispatchers.IO) {
-            val response = requestJson("GET", "/workspaces", token = token)
-            val array = response.optJSONArray("workspaces") ?: JSONArray()
+            val array = requestJson("GET", "/workspaces", token = token).optJSONArray("workspaces") ?: JSONArray()
             buildList {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
                     val slug = item.optString("slug").takeIf { it.isNotBlank() } ?: continue
-                    add(
-                        ApiWorkspace(
-                            id = item.optString("id", slug),
-                            name = item.optString("name").ifBlank { "Workspace" },
-                            slug = slug
-                        )
-                    )
+                    add(ApiWorkspace(item.optString("id", slug), item.optString("name").ifBlank { "Workspace" }, slug))
                 }
             }
         }
 
+    suspend fun getThreads(token: String, workspaceSlug: String): List<ApiThread> =
+        withContext(Dispatchers.IO) {
+            val path = "/workspace/" + Uri.encode(workspaceSlug) + "/threads"
+            val array = requestJson("GET", path, token = token).optJSONArray("threads") ?: JSONArray()
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val slug = item.optString("slug").takeIf { it.isNotBlank() } ?: continue
+                    add(ApiThread(item.optString("id", slug), item.optString("name").ifBlank { "New chat" }, slug))
+                }
+            }
+        }
+
+    suspend fun createThread(token: String, workspaceSlug: String): ApiThread =
+        withContext(Dispatchers.IO) {
+            val path = "/workspace/" + Uri.encode(workspaceSlug) + "/thread/new"
+            val response = requestJson("POST", path, token = token, body = JSONObject())
+            val thread = response.optJSONObject("thread") ?: throw ApiException("TOTEM did not create a new chat.")
+            val slug = thread.optString("slug").takeIf { it.isNotBlank() }
+                ?: throw ApiException("TOTEM returned a thread without an identifier.")
+            ApiThread(thread.optString("id", slug), thread.optString("name").ifBlank { "New chat" }, slug)
+        }
+
     suspend fun getChatHistory(token: String, workspaceSlug: String, threadSlug: String? = null): List<ApiMessage> =
         withContext(Dispatchers.IO) {
-            val encodedSlug = Uri.encode(workspaceSlug)
-            val historyPath = if (threadSlug.isNullOrBlank()) "/workspace/" + encodedSlug + "/chats" else "/workspace/" + encodedSlug + "/thread/" + Uri.encode(threadSlug) + "/chats"\n            val response = requestJson("GET", historyPath, token = token)
-            val history = response.optJSONArray("history") ?: JSONArray()
+            val workspace = Uri.encode(workspaceSlug)
+            val path = if (threadSlug.isNullOrBlank()) {
+                "/workspace/" + workspace + "/chats"
+            } else {
+                "/workspace/" + workspace + "/thread/" + Uri.encode(threadSlug) + "/chats"
+            }
+            val history = requestJson("GET", path, token = token).optJSONArray("history") ?: JSONArray()
             val messages = mutableListOf<ApiMessage>()
 
-            fun addMessage(item: JSONObject) {
+            fun appendMessage(item: JSONObject) {
                 val role = item.optString("role")
                 val content = item.optString("content")
                 if ((role == "user" || role == "assistant") && content.isNotBlank()) {
-                    val rawId = item.optString("chatId").ifBlank { messages.size.toString() }
-                    messages.add(ApiMessage(rawId + "-" + role, role, content))
+                    val id = item.optString("chatId").ifBlank { messages.size.toString() }
+                    messages.add(ApiMessage(id + "-" + role, role, content))
                 }
             }
 
-            for (index in 0 until history.length()) {
-                when (val item = history.opt(index)) {
-                    is JSONObject -> addMessage(item)
-                    is JSONArray -> {
-                        for (innerIndex in 0 until item.length()) {
-                            item.optJSONObject(innerIndex)?.let(::addMessage)
-                        }
-                    }
+            for (i in 0 until history.length()) {
+                when (val item = history.opt(i)) {
+                    is JSONObject -> appendMessage(item)
+                    is JSONArray -> for (j in 0 until item.length()) item.optJSONObject(j)?.let(::appendMessage)
                 }
             }
             messages
@@ -128,20 +114,20 @@ object TotemApi {
         token: String,
         workspaceSlug: String,
         message: String,
+        threadSlug: String? = null,
         onAssistantText: (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
-        val connection = openConnection(
-            method = "POST",
-            path = if (threadSlug.isNullOrBlank()) "/workspace/" + Uri.encode(workspaceSlug) + "/stream-chat" else "/workspace/" + Uri.encode(workspaceSlug) + "/thread/" + Uri.encode(threadSlug) + "/stream-chat",
-            token = token,
-            accept = "text/event-stream"
-        )
-
+        val workspace = Uri.encode(workspaceSlug)
+        val path = if (threadSlug.isNullOrBlank()) {
+            "/workspace/" + workspace + "/stream-chat"
+        } else {
+            "/workspace/" + workspace + "/thread/" + Uri.encode(threadSlug) + "/stream-chat"
+        }
+        val connection = openConnection("POST", path, token, "text/event-stream")
         try {
             connection.doOutput = true
             OutputStreamWriter(connection.outputStream, StandardCharsets.UTF_8).use { writer ->
                 writer.write(JSONObject().put("message", message).put("attachments", JSONArray()).toString())
-                writer.flush()
             }
 
             val status = connection.responseCode
@@ -155,24 +141,14 @@ object TotemApi {
                 while (true) {
                     val line = reader.readLine() ?: break
                     if (!line.startsWith("data:")) continue
-
-                    val rawData = line.removePrefix("data:").trim()
-                    if (rawData.isBlank() || rawData == "[DONE]") continue
-
-                    val event = runCatching { JSONObject(rawData) }.getOrNull() ?: continue
+                    val raw = line.removePrefix("data:").trim()
+                    if (raw.isBlank() || raw == "[DONE]") continue
+                    val event = runCatching { JSONObject(raw) }.getOrNull() ?: continue
                     when (event.optString("type")) {
-                        "textResponseChunk" -> {
+                        "textResponseChunk", "textResponse" -> {
                             val chunk = event.optString("textResponse")
                             if (chunk.isNotEmpty()) {
                                 answer.append(chunk)
-                                val snapshot = answer.toString()
-                                withContext(Dispatchers.Main) { onAssistantText(snapshot) }
-                            }
-                        }
-                        "textResponse" -> {
-                            val text = event.optString("textResponse")
-                            if (text.isNotEmpty()) {
-                                answer.append(text)
                                 val snapshot = answer.toString()
                                 withContext(Dispatchers.Main) { onAssistantText(snapshot) }
                             }
@@ -186,7 +162,6 @@ object TotemApi {
                     }
                 }
             }
-
             answer.toString()
         } finally {
             connection.disconnect()
@@ -196,41 +171,31 @@ object TotemApi {
     suspend fun getCredits(token: String): CreditsSnapshot =
         withContext(Dispatchers.IO) {
             val response = requestJson("GET", "/credits", token = token)
-            val transactionsJson = response.optJSONArray("transactions") ?: JSONArray()
+            val array = response.optJSONArray("transactions") ?: JSONArray()
             val transactions = buildList {
-                for (index in 0 until transactionsJson.length()) {
-                    val item = transactionsJson.optJSONObject(index) ?: continue
-                    add(
-                        CreditTransaction(
-                            id = item.optString("id", index.toString()),
-                            type = item.optString("type").ifBlank { "transaction" },
-                            amount = item.optLong("amount", 0L),
-                            createdAt = item.optString("createdAt")
-                        )
-                    )
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    add(CreditTransaction(item.optString("id", i.toString()), item.optString("type"), item.optLong("amount"), item.optString("createdAt")))
                 }
             }
-            CreditsSnapshot(
-                balance = response.optLong("balance", 0L),
-                transactions = transactions
-            )
+            CreditsSnapshot(response.optLong("balance"), transactions)
         }
 
     suspend fun getWalletBalance(token: String): WalletSnapshot =
         withContext(Dispatchers.IO) {
             val response = requestJson("GET", "/wallet/balance", token = token)
             if (response.optBoolean("unavailable", false)) {
-                return@withContext WalletSnapshot(available = false, error = "The wallet balance service is not enabled on this TOTEM server.")
+                return@withContext WalletSnapshot(false, error = "The wallet balance service is not enabled on this TOTEM server.")
             }
             if (response.optBoolean("available", false)) {
                 return@withContext WalletSnapshot(
-                    available = true,
+                    true,
                     amount = response.optString("amount"),
                     symbol = response.optString("symbol").ifBlank { "TOTEM" }
                 )
             }
             WalletSnapshot(
-                available = false,
+                false,
                 noWallet = response.optBoolean("noWallet", false),
                 error = response.optString("error").takeIf { it.isNotBlank() }
             )
@@ -246,22 +211,13 @@ object TotemApi {
         try {
             if (body != null) {
                 connection.doOutput = true
-                OutputStreamWriter(connection.outputStream, StandardCharsets.UTF_8).use { writer ->
-                    writer.write(body.toString())
-                    writer.flush()
-                }
+                OutputStreamWriter(connection.outputStream, StandardCharsets.UTF_8).use { it.write(body.toString()) }
             }
-
             val status = connection.responseCode
-            if (status == HttpURLConnection.HTTP_NO_CONTENT) {
-                return JSONObject().put("unavailable", true)
-            }
-
+            if (status == HttpURLConnection.HTTP_NO_CONTENT) return JSONObject().put("unavailable", true)
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val raw = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) {
-                throw ApiException(extractError(raw, "TOTEM request failed (HTTP " + status + ")."))
-            }
+            if (status !in 200..299) throw ApiException(extractError(raw, "TOTEM request failed (HTTP " + status + ")."))
             return if (raw.isBlank()) JSONObject() else JSONObject(raw)
         } finally {
             connection.disconnect()
@@ -274,26 +230,21 @@ object TotemApi {
         token: String? = null,
         accept: String = "application/json"
     ): HttpURLConnection {
-        val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
+        return (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             setRequestProperty("Accept", accept)
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("X-Requested-With", "TOTEM-Android")
-            if (!token.isNullOrBlank()) {
-                setRequestProperty("Authorization", "Bearer " + token)
-            }
+            if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer " + token)
         }
-        return connection
     }
 
     private fun extractError(raw: String, fallback: String): String {
         if (raw.isBlank()) return fallback
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return fallback
-        return json.optString("message").ifBlank {
-            json.optString("error").ifBlank { fallback }
-        }
+        return json.optString("message").ifBlank { json.optString("error").ifBlank { fallback } }
     }
 }
 
