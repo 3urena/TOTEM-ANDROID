@@ -31,22 +31,19 @@ import xyz.totemai.app.NavEvents
 import xyz.totemai.app.NetworkMonitor
 import xyz.totemai.app.Routes
 import xyz.totemai.app.SessionStore
-import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.route
 import xyz.totemai.app.ui.screens.ChatScreen
 import xyz.totemai.app.ui.screens.HomeScreen
+import xyz.totemai.app.ui.screens.NativeSignInScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
 import xyz.totemai.app.ui.screens.WalletScreen
 import xyz.totemai.app.ui.theme.Ink
-import xyz.totemai.app.web.TotemWebHost
-import xyz.totemai.app.web.WebController
 import java.util.UUID
 
 @Composable
 fun TotemRoot(
     activity: ComponentActivity,
-    controller: WebController,
     events: NavEvents,
     store: SessionStore,
     monitor: NetworkMonitor,
@@ -63,15 +60,6 @@ fun TotemRoot(
     val online by monitor.online.collectAsState()
     val signedIn = remember(sessionTick) { store.signedIn() }
     val displayName = remember(sessionTick) { readName(store.user()) }
-    // The hosted site is used only for the sign-in handoff. Chat and Wallet
-    // themselves are native Compose screens.
-    val showingHostedLogin = route == Routes.WORKSPACE && !signedIn
-
-    LaunchedEffect(route, signedIn) {
-        if (route == Routes.WORKSPACE && !signedIn) {
-            controller.navigateTo(TotemConfig.LOGIN_URL)
-        }
-    }
 
     LaunchedEffect(Unit) {
         events.events.collect { event ->
@@ -82,10 +70,7 @@ fun TotemRoot(
     }
 
     BackHandler {
-        when {
-            showingHostedLogin && controller.canGoBack() -> controller.goBack()
-            !navController.popBackStack() -> activity.finish()
-        }
+        if (!navController.popBackStack()) activity.finish()
     }
 
     Box(
@@ -130,7 +115,7 @@ fun TotemRoot(
                             onOpenWorkspace = { navController.navigateToTab(Routes.WORKSPACE) },
                             onOpenWallet = { navController.navigateToTab(Routes.WALLET) },
                             onSignOut = {
-                                controller.signOut()
+                                store.clear()
                                 sessionTick++
                                 navController.navigateToTab(Routes.HOME)
                             }
@@ -142,11 +127,14 @@ fun TotemRoot(
                                 store = store,
                                 signedIn = true,
                                 launchId = appLaunchId,
-                                onSignIn = { controller.navigateTo(TotemConfig.LOGIN_URL) },
+                                onSignIn = {},
                                 onCreditsChanged = { creditRefreshTick++ }
                             )
                         } else {
-                            Box(Modifier.fillMaxSize())
+                            NativeSignInScreen(
+                                store = store,
+                                onSignedIn = { sessionTick++ }
+                            )
                         }
                     }
                     composable(Routes.WALLET) {
@@ -158,14 +146,6 @@ fun TotemRoot(
                         )
                     }
                 }
-
-                TotemWebHost(
-                    controller = controller,
-                    store = store,
-                    monitor = monitor,
-                    visible = showingHostedLogin,
-                    onSessionChanged = { sessionTick++ }
-                )
             }
         }
 
