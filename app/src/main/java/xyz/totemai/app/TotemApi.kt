@@ -74,6 +74,7 @@ private data class ParsedSseEvent(
 private class AgentSession(
     val workspaceSlug: String,
     val threadSlug: String,
+    val accountToken: String,
     @Volatile var sink: SendChannel<TotemChatStreamEvent>?,
     @Volatile var turnCompletion: CompletableDeferred<Unit>?
 ) {
@@ -319,6 +320,7 @@ class TotemApi(private val store: SessionStore) {
         if (existingAgent != null &&
             existingAgent.workspaceSlug == workspaceSlug &&
             existingAgent.threadSlug == normalizedThread &&
+            existingAgent.accountToken == session &&
             existingAgent.awaitingFeedback &&
             existingAgent.socket != null
         ) {
@@ -423,7 +425,7 @@ class TotemApi(private val store: SessionStore) {
 
         val invocationId = result.first
         if (!invocationId.isNullOrBlank()) {
-            startAgentSession(invocationId, workspaceSlug, normalizedThread, producer)
+            startAgentSession(invocationId, workspaceSlug, normalizedThread, session, producer)
         } else if (!result.second) {
             producer.send(TotemChatStreamEvent.Finished)
         }
@@ -433,10 +435,11 @@ class TotemApi(private val store: SessionStore) {
         invocationId: String,
         workspaceSlug: String,
         threadSlug: String,
+        accountToken: String,
         producer: SendChannel<TotemChatStreamEvent>
     ) {
         val completion = CompletableDeferred<Unit>()
-        val agent = AgentSession(workspaceSlug, threadSlug, producer, completion)
+        val agent = AgentSession(workspaceSlug, threadSlug, accountToken, producer, completion)
         val socketBase = apiBase
             .replaceFirst("https://", "wss://")
             .replaceFirst("http://", "ws://")
