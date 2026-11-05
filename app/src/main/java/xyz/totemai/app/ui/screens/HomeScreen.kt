@@ -90,7 +90,7 @@ fun HomeScreen(
         Spacer(Modifier.height(12.dp))
 
         Text(
-            text = "TOTEM MOBILE connects to the live hosted platform. Your account, models, credits, payments and tools remain on TOTEM servers while this app provides native navigation, secure session storage and a mobile-first shell.",
+            text = "Use the native mobile interface for chat and wallet while your account, models, credits and AI processing stay connected to the live TOTEM service.",
             style = MaterialTheme.typography.bodyLarge,
             color = TextSecondary
         )
@@ -165,7 +165,7 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "Hosted at beta.totemai.xyz — no local AI backend.",
+            text = "Connected to the live TOTEM service — no local AI backend.",
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary
         )
