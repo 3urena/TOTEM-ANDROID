@@ -82,9 +82,9 @@ fun ProfileScreen(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = if (signedIn) {
-                    "The app mirrors the hosted session into encrypted native storage. The hosted WebView also keeps the website's own localStorage session copy."
+                    "Your TOTEM session is stored in Android's encrypted storage and used to call the official hosted API."
                 } else {
-                    "Sign in through the hosted login screen to use the workspace."
+                    "Sign in with your TOTEM account to access your workspace."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
@@ -151,8 +151,8 @@ fun ProfileScreen(
 
         ActionRow(
             icon = Icons.Default.Lock,
-            title = "Wallet connections",
-            subtitle = "Open the hosted settings page"
+            title = "Wallet & credits",
+            subtitle = "View your live TOTEM balances in this app"
         ) { onOpenWallet() }
 
         Spacer(Modifier.height(10.dp))
