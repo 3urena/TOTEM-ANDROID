@@ -418,20 +418,22 @@ class TotemApi(private val store: SessionStore) {
     private fun parseStreamEvent(raw: String): TotemChatStreamEvent? {
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val type = json.optString("type")
+
+        // The hosted API also emits agent/tool status events. Those are control
+        // events, not assistant messages; only the documented text event types
+        // may be rendered as chat content.
         return when (type) {
             "textResponseChunk", "textResponse" -> {
-                val text = json.optString("textResponse")
-                if (text.isBlank()) null else TotemChatStreamEvent.Text(text)
+                val text = if (json.isNull("textResponse")) "" else json.optString("textResponse")
+                if (text.isBlank() || text == "null") null else TotemChatStreamEvent.Text(text)
             }
             "abort" -> TotemChatStreamEvent.Failed(
-                json.optString("error").takeIf { it.isNotBlank() && it != "false" }
-                    ?: "The TOTEM server stopped before completing the answer."
+                if (json.isNull("error")) ""
+                else json.optString("error").takeIf { it.isNotBlank() && it != "false" }.orEmpty()
+                    .ifBlank { "The TOTEM server stopped before completing the answer." }
             )
             "finalizeResponseStream" -> TotemChatStreamEvent.Finished
-            else -> {
-                val text = json.optString("textResponse")
-                if (text.isNotBlank()) TotemChatStreamEvent.Text(text) else null
-            }
+            else -> null
         }
     }
 
