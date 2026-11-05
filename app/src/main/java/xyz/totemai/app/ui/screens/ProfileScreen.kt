@@ -152,7 +152,7 @@ fun ProfileScreen(
         ActionRow(
             icon = Icons.Default.Lock,
             title = "Wallet connections",
-            subtitle = "Open the hosted settings page"
+            subtitle = "View credits and connected wallet"
         ) { onOpenWallet() }
 
         Spacer(Modifier.height(10.dp))
