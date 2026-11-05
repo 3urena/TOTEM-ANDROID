@@ -120,6 +120,9 @@ class TotemApi(private val store: SessionStore) {
         if (deviceToken.isBlank()) {
             throw TotemApiException(500, "TOTEM did not return a device token.")
         }
+        // Persist before approval so a retry reuses this pending device instead
+        // of registering duplicate devices.
+        store.saveMobileDeviceToken(deviceToken)
 
         // The mobile API only exposes self-approval through admin-authorized
         // endpoints. This will fail safely for accounts without admin rights.
