@@ -18,14 +18,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import xyz.totemai.app.Routes
 import xyz.totemai.app.ui.theme.InkElevated
-import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.TextSecondary
+import xyz.totemai.app.ui.theme.Violet
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
 private val TABS = listOf(
     Tab(Routes.HOME, "Home", Icons.Default.Home),
-    Tab(Routes.WORKSPACE, "Workspace", Icons.Default.Send),
+    Tab(Routes.WORKSPACE, "Chat", Icons.Default.Send),
     Tab(Routes.WALLET, "Wallet", Icons.Default.Lock),
     Tab(Routes.PROFILE, "Profile", Icons.Default.Person)
 )
@@ -44,11 +44,11 @@ fun TotemBottomBar(current: String, onSelect: (String) -> Unit) {
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
                 label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Lime,
-                    selectedTextColor = Lime,
+                    selectedIconColor = Violet,
+                    selectedTextColor = Violet,
                     unselectedIconColor = TextSecondary,
                     unselectedTextColor = TextSecondary,
-                    indicatorColor = Lime.copy(alpha = 0.12f)
+                    indicatorColor = Violet.copy(alpha = 0.16f)
                 )
             )
         }

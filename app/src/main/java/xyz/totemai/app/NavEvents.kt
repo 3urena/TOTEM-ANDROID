@@ -30,5 +30,5 @@ fun DeepTarget.route(): String = when (this) {
     DeepTarget.WORKSPACE -> Routes.WORKSPACE
     DeepTarget.WALLET -> Routes.WALLET
     DeepTarget.PROFILE -> Routes.PROFILE
-    else -> Routes.HOME
+    else -> Routes.WORKSPACE
 }

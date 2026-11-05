@@ -13,6 +13,7 @@ class SessionStore private constructor(context: Context) {
     private var opened = false
     private var memoryToken: String? = null
     private var memoryUser: String? = null
+    private var memoryMobileDeviceToken: String? = null
 
     @Synchronized
     private fun prefs(): SharedPreferences? {
@@ -71,6 +72,40 @@ class SessionStore private constructor(context: Context) {
     @Synchronized
     fun user(): String? = read(KEY_USER) ?: memoryUser
 
+    @Synchronized
+    fun saveMobileDeviceToken(token: String) {
+        val p = prefs()
+        if (p == null) {
+            memoryMobileDeviceToken = token
+            return
+        }
+        val saved = runCatching {
+            p.edit().putString(KEY_MOBILE_DEVICE_TOKEN, token).apply()
+        }.isSuccess
+        if (saved) {
+            memoryMobileDeviceToken = null
+        } else {
+            Log.w(TAG, "encrypted mobile-token write failed; using memory-only token")
+            prefs = null
+            memoryMobileDeviceToken = token
+        }
+    }
+
+    @Synchronized
+    fun mobileDeviceToken(): String? =
+        read(KEY_MOBILE_DEVICE_TOKEN) ?: memoryMobileDeviceToken
+
+    @Synchronized
+    fun clearMobileDeviceToken() {
+        memoryMobileDeviceToken = null
+        val p = prefs() ?: return
+        runCatching { p.edit().remove(KEY_MOBILE_DEVICE_TOKEN).apply() }
+            .onFailure {
+                Log.w(TAG, "encrypted mobile-token clear failed: ${it.javaClass.simpleName}")
+                prefs = null
+            }
+    }
+
     private fun read(key: String): String? {
         val p = prefs() ?: return null
         return runCatching { p.getString(key, null) }
@@ -85,6 +120,7 @@ class SessionStore private constructor(context: Context) {
     fun clear() {
         memoryToken = null
         memoryUser = null
+        memoryMobileDeviceToken = null
         val p = prefs() ?: return
         runCatching { p.edit().clear().apply() }
             .onFailure {
@@ -100,6 +136,7 @@ class SessionStore private constructor(context: Context) {
         private const val FILE = "totem_session"
         const val KEY_TOKEN = TotemConfig.KEY_TOKEN
         const val KEY_USER = TotemConfig.KEY_USER
+        private const val KEY_MOBILE_DEVICE_TOKEN = "totem_mobile_device_token"
 
         @Volatile
         private var instance: SessionStore? = null

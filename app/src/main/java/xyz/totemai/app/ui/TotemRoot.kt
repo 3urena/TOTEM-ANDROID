@@ -7,6 +7,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -31,19 +35,18 @@ import xyz.totemai.app.NavEvents
 import xyz.totemai.app.NetworkMonitor
 import xyz.totemai.app.Routes
 import xyz.totemai.app.SessionStore
-import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.route
+import xyz.totemai.app.ui.screens.ChatScreen
 import xyz.totemai.app.ui.screens.HomeScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
+import xyz.totemai.app.ui.screens.WalletScreen
+import xyz.totemai.app.ui.screens.WalletScreen
 import xyz.totemai.app.ui.theme.Ink
-import xyz.totemai.app.web.TotemWebHost
-import xyz.totemai.app.web.WebController
 
 @Composable
 fun TotemRoot(
     activity: ComponentActivity,
-    controller: WebController,
     events: NavEvents,
     store: SessionStore,
     monitor: NetworkMonitor,
@@ -51,6 +54,7 @@ fun TotemRoot(
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val route = backStackEntry?.destination?.route ?: startTarget.route()
     var showSplash by remember { androidx.compose.runtime.mutableStateOf(true) }
     var sessionTick by remember { mutableIntStateOf(0) }
@@ -58,15 +62,6 @@ fun TotemRoot(
     val online by monitor.online.collectAsState()
     val signedIn = remember(sessionTick) { store.signedIn() }
     val displayName = remember(sessionTick) { readName(store.user()) }
-    val onWebRoute = route == Routes.WORKSPACE || route == Routes.WALLET
-
-    LaunchedEffect(route) {
-        when (route) {
-            Routes.WORKSPACE -> controller.navigateTo(TotemConfig.WORKSPACE_URL)
-            Routes.WALLET -> controller.navigateTo(TotemConfig.WALLET_URL)
-        }
-    }
-
     LaunchedEffect(Unit) {
         events.events.collect { event ->
             when (event) {
@@ -76,24 +71,24 @@ fun TotemRoot(
     }
 
     BackHandler {
-        when {
-            route == Routes.WORKSPACE && controller.canGoBack() -> controller.goBack()
-            !navController.popBackStack() -> activity.finish()
-        }
+        if (!navController.popBackStack()) activity.finish()
     }
 
     Box(
         Modifier
             .fillMaxSize()
+            .imePadding()
             .background(Ink)
     ) {
         Scaffold(
             containerColor = Ink,
             bottomBar = {
-                TotemBottomBar(
-                    current = route,
-                    onSelect = { target -> navController.navigateToTab(target) }
-                )
+                if (!imeVisible) {
+                    TotemBottomBar(
+                        current = route,
+                        onSelect = { target -> navController.navigateToTab(target) }
+                    )
+                }
             }
         ) { inner ->
             Box(
@@ -124,23 +119,30 @@ fun TotemRoot(
                             onOpenWorkspace = { navController.navigateToTab(Routes.WORKSPACE) },
                             onOpenWallet = { navController.navigateToTab(Routes.WALLET) },
                             onSignOut = {
-                                controller.signOut()
+                                store.clear()
                                 sessionTick++
                                 navController.navigateToTab(Routes.HOME)
                             }
                         )
                     }
-                    composable(Routes.WORKSPACE) { Box(Modifier.fillMaxSize()) }
-                    composable(Routes.WALLET) { Box(Modifier.fillMaxSize()) }
+                    composable(Routes.WORKSPACE) {
+                        ChatScreen(
+                            store = store,
+                            signedIn = signedIn,
+                            sessionVersion = sessionTick,
+                            onSessionChanged = { sessionTick++ }
+                        )
+                    }
+                    composable(Routes.WALLET) {
+                        WalletScreen(
+                            store = store,
+                            signedIn = signedIn,
+                            sessionVersion = sessionTick,
+                            onOpenChat = { navController.navigateToTab(Routes.WORKSPACE) }
+                        )
+                    }
                 }
 
-                TotemWebHost(
-                    controller = controller,
-                    store = store,
-                    monitor = monitor,
-                    visible = onWebRoute,
-                    onSessionChanged = { sessionTick++ }
-                )
             }
         }
 

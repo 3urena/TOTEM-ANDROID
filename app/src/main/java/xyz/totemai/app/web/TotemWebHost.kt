@@ -9,6 +9,7 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -167,6 +168,7 @@ fun TotemWebHost(
                 error: WebResourceError
             ) {
                 if (!request.isForMainFrame) return
+                Log.w(TAG, "Main-frame load failed: code=${error.errorCode}, path=${request.url.path}")
                 loading = false
                 failed = true
             }
@@ -176,6 +178,9 @@ fun TotemWebHost(
                 request: WebResourceRequest,
                 errorResponse: WebResourceResponse
             ) {
+                if (errorResponse.statusCode >= 400) {
+                    Log.w(TAG, "HTTP ${errorResponse.statusCode} while loading path=${request.url.path}")
+                }
                 if (request.isForMainFrame && errorResponse.statusCode >= 500) {
                     loading = false
                     failed = true
@@ -213,6 +218,21 @@ fun TotemWebHost(
         object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 progress = newProgress
+            }
+
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                when (consoleMessage.messageLevel()) {
+                    ConsoleMessage.MessageLevel.ERROR -> Log.e(
+                        TAG,
+                        "Hosted JavaScript error at ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}"
+                    )
+                    ConsoleMessage.MessageLevel.WARNING -> Log.w(
+                        TAG,
+                        "Hosted JavaScript warning at ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}"
+                    )
+                    else -> Unit
+                }
+                return true
             }
 
             override fun onShowFileChooser(
