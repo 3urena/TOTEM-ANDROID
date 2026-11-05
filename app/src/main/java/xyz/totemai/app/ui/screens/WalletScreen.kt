@@ -243,7 +243,7 @@ fun WalletScreen(
             }
         }
 
-        if (credits?.transactionCount ?: 0 > 0) {
+        if ((credits?.transactionCount ?: 0) > 0) {
             Text(
                 "RECENT CREDIT ACTIVITY · LAST ${credits?.transactionCount ?: 0} TRANSACTIONS",
                 color = TextSecondary,
@@ -267,7 +267,7 @@ fun WalletScreen(
                     balance == null && loading -> Text("Loading wallet…", color = TextSecondary)
                     balance?.optBoolean("available") == true -> {
                         Text(
-                            balance.optString("symbol", "$TOTEM"),
+                            balance.optString("symbol", "\\$TOTEM"),
                             color = TextSecondary,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -290,7 +290,7 @@ fun WalletScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("NO WALLET LINKED", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                                Text("Connect a crypto wallet to view its $TOTEM balance.", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                Text("Connect a crypto wallet to view its \\$TOTEM balance.", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                             }
                             OutlinedButton(
                                 onClick = { showLinkInfo = true },
