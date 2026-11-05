@@ -161,7 +161,7 @@ fun WalletScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    CreditRing(balance = credits)
+                    CreditRing()
                     Column(Modifier.weight(1f)) {
                         Text("AVAILABLE CREDITS", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
@@ -295,7 +295,7 @@ private fun WalletCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CreditRing(balance: Long?) {
+private fun CreditRing() {
     Box(
         modifier = Modifier.size(104.dp),
         contentAlignment = Alignment.Center
@@ -325,9 +325,9 @@ private fun CreditRing(balance: Long?) {
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("TOTEM", color = TextSecondary, style = MaterialTheme.typography.labelSmall)
+            Text("USAGE", color = TextSecondary, style = MaterialTheme.typography.labelSmall)
             Text(
-                text = if (balance == null) "—" else "✓",
+                text = "—%",
                 color = TextPrimary,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
