@@ -270,9 +270,9 @@ class TotemApi(private val store: SessionStore) {
             )
             try {
                 val status = connection.responseCode
-                val responseText = readResponse(connection, status)
                 if (status !in 200..299) {
-                    throw TotemApiException(status, extractError(responseText, status))
+                    val errorBody = readResponse(connection, status)
+                    throw TotemApiException(status, extractError(errorBody, status))
                 }
                 val fullText = StringBuilder()
                 var serverError: String? = null
