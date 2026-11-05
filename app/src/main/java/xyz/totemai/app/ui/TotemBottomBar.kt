@@ -1,9 +1,11 @@
 package xyz.totemai.app.ui
 
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -18,8 +20,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import xyz.totemai.app.Routes
 import xyz.totemai.app.ui.theme.InkElevated
-import xyz.totemai.app.ui.theme.Violet
 import xyz.totemai.app.ui.theme.TextSecondary
+import xyz.totemai.app.ui.theme.Violet
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -35,7 +37,10 @@ fun TotemBottomBar(current: String, onSelect: (String) -> Unit) {
     NavigationBar(
         containerColor = InkElevated,
         tonalElevation = 0.dp,
-        modifier = Modifier.height(72.dp)
+        modifier = Modifier.fillMaxWidth(),
+        // Do not constrain this bar to a fixed height: on edge-to-edge
+        // Android screens the system navigation area must remain reserved.
+        windowInsets = WindowInsets.navigationBars
     ) {
         TABS.forEach { tab ->
             NavigationBarItem(
