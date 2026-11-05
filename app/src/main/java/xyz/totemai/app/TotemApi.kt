@@ -43,6 +43,14 @@ data class TotemWalletBalance(
     val error: String?
 )
 
+data class TotemLoginResult(
+    val valid: Boolean,
+    val token: String?,
+    val userJson: String?,
+    val recoveryCodes: List<String>,
+    val message: String?
+)
+
 sealed interface TotemChatStreamEvent {
     data class Text(val value: String) : TotemChatStreamEvent
     data class Failed(val message: String) : TotemChatStreamEvent
