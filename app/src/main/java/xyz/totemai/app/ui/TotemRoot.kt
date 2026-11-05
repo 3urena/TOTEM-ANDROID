@@ -15,7 +15,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -24,26 +27,29 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
-import org.json.JSONObject
+import kotlinx.coroutines.launch
 import xyz.totemai.app.DeepTarget
 import xyz.totemai.app.NavEvent
 import xyz.totemai.app.NavEvents
 import xyz.totemai.app.NetworkMonitor
 import xyz.totemai.app.Routes
 import xyz.totemai.app.SessionStore
-import xyz.totemai.app.TotemConfig
+import xyz.totemai.app.data.ApiException
+import xyz.totemai.app.data.ApiMessage
+import xyz.totemai.app.data.ApiWorkspace
+import xyz.totemai.app.data.ApiThread
+import xyz.totemai.app.data.CreditsSnapshot
+import xyz.totemai.app.data.TotemApi
+import xyz.totemai.app.data.WalletSnapshot
 import xyz.totemai.app.route
 import xyz.totemai.app.ui.screens.HomeScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
 import xyz.totemai.app.ui.theme.Ink
-import xyz.totemai.app.web.TotemWebHost
-import xyz.totemai.app.web.WebController
 
 @Composable
 fun TotemRoot(
     activity: ComponentActivity,
-    controller: WebController,
     events: NavEvents,
     store: SessionStore,
     monitor: NetworkMonitor,
@@ -52,19 +58,95 @@ fun TotemRoot(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route ?: startTarget.route()
-    var showSplash by remember { androidx.compose.runtime.mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    var showSplash by remember { mutableStateOf(true) }
     var sessionTick by remember { mutableIntStateOf(0) }
+    var loginIdentifier by remember { mutableStateOf("") }
+    var loginPassword by remember { mutableStateOf("") }
+    var loginLoading by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf<String?>(null) }
 
     val online by monitor.online.collectAsState()
     val signedIn = remember(sessionTick) { store.signedIn() }
     val displayName = remember(sessionTick) { readName(store.user()) }
-    val onWebRoute = route == Routes.WORKSPACE || route == Routes.WALLET
 
-    LaunchedEffect(route) {
-        when (route) {
-            Routes.WORKSPACE -> controller.navigateTo(TotemConfig.WORKSPACE_URL)
-            Routes.WALLET -> controller.navigateTo(TotemConfig.WALLET_URL)
+    val workspaces = remember { mutableStateListOf<ApiWorkspace>() }
+    val messages = remember { mutableStateListOf<ApiMessage>() }
+    var selectedWorkspace by remember { mutableStateOf<ApiWorkspace?>(null) }
+    var activeThread by remember { mutableStateOf<ApiThread?>(null) }
+    var workspaceLoading by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var workspaceError by remember { mutableStateOf<String?>(null) }
+
+    var credits by remember { mutableStateOf<CreditsSnapshot?>(null) }
+    var wallet by remember { mutableStateOf<WalletSnapshot?>(null) }
+    var walletLoading by remember { mutableStateOf(false) }
+    var walletError by remember { mutableStateOf<String?>(null) }
+
+    fun loadWorkspaceData() {
+        val token = store.token() ?: return
+        scope.launch {
+            workspaceLoading = true
+            workspaceError = null
+            try {
+                val found = TotemApi.getWorkspaces(token)
+                workspaces.clear()
+                workspaces.addAll(found)
+                val current = selectedWorkspace?.let { old -> found.firstOrNull { it.slug == old.slug } }
+                selectedWorkspace = current ?: found.firstOrNull()
+                if (selectedWorkspace != null) {
+                    val threads = TotemApi.getThreads(token, selectedWorkspace!!.slug)
+                    activeThread = threads.firstOrNull()
+                    val history = TotemApi.getChatHistory(token, selectedWorkspace!!.slug, activeThread?.slug)
+                    messages.clear()
+                    messages.addAll(history)
+                } else {
+                    messages.clear()
+                }
+            } catch (e: Exception) {
+                workspaceError = e.message ?: "Could not load workspaces."
+            } finally {
+                workspaceLoading = false
+            }
         }
+    }
+
+    fun createNewChat() {
+        val token = store.token() ?: return
+        val workspace = selectedWorkspace ?: return
+        scope.launch {
+            workspaceError = null
+            try {
+                val thread = TotemApi.createThread(token, workspace.slug)
+                activeThread = thread
+                messages.clear()
+            } catch (e: Exception) {
+                workspaceError = e.message ?: "Could not create a new chat."
+            }
+        }
+    }
+
+    fun loadWalletData() {
+        val token = store.token() ?: return
+        scope.launch {
+            walletLoading = true
+            walletError = null
+            try {
+                credits = TotemApi.getCredits(token)
+                wallet = TotemApi.getWalletBalance(token)
+            } catch (e: Exception) {
+                walletError = e.message ?: "Could not load account balances."
+            } finally {
+                walletLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(sessionTick, route) {
+        if (signedIn && route == Routes.WORKSPACE) loadWorkspaceData()
+        if (signedIn && route == Routes.WALLET) loadWalletData()
     }
 
     LaunchedEffect(Unit) {
@@ -76,17 +158,10 @@ fun TotemRoot(
     }
 
     BackHandler {
-        when {
-            route == Routes.WORKSPACE && controller.canGoBack() -> controller.goBack()
-            !navController.popBackStack() -> activity.finish()
-        }
+        if (!navController.popBackStack()) activity.finish()
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Ink)
-    ) {
+    Box(Modifier.fillMaxSize().background(Ink)) {
         Scaffold(
             containerColor = Ink,
             bottomBar = {
@@ -96,11 +171,7 @@ fun TotemRoot(
                 )
             }
         ) { inner ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(inner)
-            ) {
+            Box(Modifier.fillMaxSize().padding(inner)) {
                 NavHost(
                     navController = navController,
                     startDestination = startTarget.route(),
@@ -116,6 +187,120 @@ fun TotemRoot(
                             onOpenProfile = { navController.navigateToTab(Routes.PROFILE) }
                         )
                     }
+                    composable(Routes.WORKSPACE) {
+                        if (!signedIn) {
+                            LoginScreen(
+                                identifier = loginIdentifier,
+                                password = loginPassword,
+                                loading = loginLoading,
+                                error = loginError,
+                                onIdentifierChange = { loginIdentifier = it; loginError = null },
+                                onPasswordChange = { loginPassword = it; loginError = null },
+                                onLogin = {
+                                    scope.launch {
+                                        loginLoading = true
+                                        loginError = null
+                                        try {
+                                            val result = TotemApi.login(loginIdentifier, loginPassword)
+                                            store.save(result.token, result.userJson)
+                                            loginPassword = ""
+                                            sessionTick++
+                                        } catch (e: Exception) {
+                                            loginError = e.message ?: "Could not sign in."
+                                        } finally {
+                                            loginLoading = false
+                                        }
+                                    }
+                                }
+                            )
+                        } else {
+                            WorkspaceScreen(
+                                workspaces = workspaces,
+                                selectedWorkspace = selectedWorkspace,
+                                messages = messages,
+                                draft = draft,
+                                loading = workspaceLoading,
+                                sending = sending,
+                                error = workspaceError,
+                                onSelectWorkspace = { workspace ->
+                                    selectedWorkspace = workspace
+                                    activeThread = null
+                                    messages.clear()
+                                    loadWorkspaceData()
+                                },
+                                onRefresh = { loadWorkspaceData() },
+                                onDraftChange = { draft = it },
+                                onSend = {
+                                    val token = store.token()
+                                    val workspace = selectedWorkspace
+                                    val prompt = draft.trim()
+                                    if (token != null && workspace != null && prompt.isNotEmpty() && !sending) {
+                                        draft = ""
+                                        workspaceError = null
+                                        messages.add(ApiMessage("local-user-" + System.currentTimeMillis(), "user", prompt))
+                                        val assistantId = "local-assistant-" + System.currentTimeMillis()
+                                        messages.add(ApiMessage(assistantId, "assistant", ""))
+                                        sending = true
+                                        scope.launch {
+                                            try {
+                                                TotemApi.streamChat(token, workspace.slug, prompt, activeThread?.slug) { text ->
+                                                    val lastIndex = messages.lastIndex
+                                                    if (lastIndex >= 0 && messages[lastIndex].id == assistantId) {
+                                                        messages[lastIndex] = messages[lastIndex].copy(content = text)
+                                                    }
+                                                }
+                                                loadWalletData()
+                                            } catch (e: Exception) {
+                                                workspaceError = e.message ?: "The chat request failed."
+                                            } finally {
+                                                sending = false
+                                            }
+                                        }
+                                    }
+                                },
+                                onNewChat = { createNewChat() }
+                            )
+                        }
+                    }
+                    composable(Routes.WALLET) {
+                        if (!signedIn) {
+                            LoginScreen(
+                                identifier = loginIdentifier,
+                                password = loginPassword,
+                                loading = loginLoading,
+                                error = loginError,
+                                onIdentifierChange = { loginIdentifier = it; loginError = null },
+                                onPasswordChange = { loginPassword = it; loginError = null },
+                                onLogin = {
+                                    scope.launch {
+                                        loginLoading = true
+                                        loginError = null
+                                        try {
+                                            val result = TotemApi.login(loginIdentifier, loginPassword)
+                                            store.save(result.token, result.userJson)
+                                            loginPassword = ""
+                                            sessionTick++
+                                        } catch (e: Exception) {
+                                            loginError = e.message ?: "Could not sign in."
+                                        } finally {
+                                            loginLoading = false
+                                        }
+                                    }
+                                }
+                            )
+                        } else {
+                            WalletScreen(
+                                credits = credits,
+                                wallet = wallet,
+                                loading = walletLoading,
+                                error = walletError,
+                                onRefresh = { loadWalletData() },
+                                onOpenWalletConnection = {
+                                    walletError = "Wallet linking is not yet exposed as a native API in the inspected backend. No website screen has been embedded."
+                                }
+                            )
+                        }
+                    }
                     composable(Routes.PROFILE) {
                         ProfileScreen(
                             store = store,
@@ -124,30 +309,25 @@ fun TotemRoot(
                             onOpenWorkspace = { navController.navigateToTab(Routes.WORKSPACE) },
                             onOpenWallet = { navController.navigateToTab(Routes.WALLET) },
                             onSignOut = {
-                                controller.signOut()
+                                store.clear()
+                                workspaces.clear()
+                                messages.clear()
+                                selectedWorkspace = null
+                                activeThread = null
+                                credits = null
+                                wallet = null
+                                loginIdentifier = ""
+                                loginPassword = ""
                                 sessionTick++
                                 navController.navigateToTab(Routes.HOME)
                             }
                         )
                     }
-                    composable(Routes.WORKSPACE) { Box(Modifier.fillMaxSize()) }
-                    composable(Routes.WALLET) { Box(Modifier.fillMaxSize()) }
                 }
-
-                TotemWebHost(
-                    controller = controller,
-                    store = store,
-                    monitor = monitor,
-                    visible = onWebRoute,
-                    onSessionChanged = { sessionTick++ }
-                )
             }
         }
 
-        AnimatedVisibility(
-            visible = showSplash,
-            exit = fadeOut(tween(360))
-        ) {
+        AnimatedVisibility(visible = showSplash, exit = fadeOut(tween(360))) {
             SplashScreen(onFinished = { showSplash = false })
         }
     }
@@ -158,16 +338,14 @@ private fun NavHostController.navigateToTab(target: String) {
     navigate(target, navOptions {
         launchSingleTop = true
         restoreState = true
-        popUpTo(graph.startDestinationId) {
-            saveState = true
-        }
+        popUpTo(graph.startDestinationId) { saveState = true }
     })
 }
 
 private fun readName(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     return runCatching {
-        val obj = JSONObject(raw)
+        val obj = org.json.JSONObject(raw)
         obj.optString("username").takeIf { it.isNotBlank() }
             ?: obj.optString("displayName").takeIf { it.isNotBlank() }
     }.getOrNull()
