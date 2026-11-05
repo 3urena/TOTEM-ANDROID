@@ -37,6 +37,7 @@ import xyz.totemai.app.SessionStore
 import xyz.totemai.app.data.ApiException
 import xyz.totemai.app.data.ApiMessage
 import xyz.totemai.app.data.ApiWorkspace
+import xyz.totemai.app.data.ApiThread
 import xyz.totemai.app.data.CreditsSnapshot
 import xyz.totemai.app.data.TotemApi
 import xyz.totemai.app.data.WalletSnapshot
@@ -73,6 +74,7 @@ fun TotemRoot(
     val workspaces = remember { mutableStateListOf<ApiWorkspace>() }
     val messages = remember { mutableStateListOf<ApiMessage>() }
     var selectedWorkspace by remember { mutableStateOf<ApiWorkspace?>(null) }
+    var activeThread by remember { mutableStateOf<ApiThread?>(null) }
     var workspaceLoading by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
@@ -95,7 +97,9 @@ fun TotemRoot(
                 val current = selectedWorkspace?.let { old -> found.firstOrNull { it.slug == old.slug } }
                 selectedWorkspace = current ?: found.firstOrNull()
                 if (selectedWorkspace != null) {
-                    val history = TotemApi.getChatHistory(token, selectedWorkspace!!.slug)
+                    val threads = TotemApi.getThreads(token, selectedWorkspace!!.slug)
+                    activeThread = threads.firstOrNull()
+                    val history = TotemApi.getChatHistory(token, selectedWorkspace!!.slug, activeThread?.slug)
                     messages.clear()
                     messages.addAll(history)
                 } else {
@@ -105,6 +109,21 @@ fun TotemRoot(
                 workspaceError = e.message ?: "Could not load workspaces."
             } finally {
                 workspaceLoading = false
+            }
+        }
+    }
+
+    fun createNewChat() {
+        val token = store.token() ?: return
+        val workspace = selectedWorkspace ?: return
+        scope.launch {
+            workspaceError = null
+            try {
+                val thread = TotemApi.createThread(token, workspace.slug)
+                activeThread = thread
+                messages.clear()
+            } catch (e: Exception) {
+                workspaceError = e.message ?: "Could not create a new chat."
             }
         }
     }
@@ -205,6 +224,7 @@ fun TotemRoot(
                                 error = workspaceError,
                                 onSelectWorkspace = { workspace ->
                                     selectedWorkspace = workspace
+                                    activeThread = null
                                     messages.clear()
                                     loadWorkspaceData()
                                 },
@@ -223,7 +243,7 @@ fun TotemRoot(
                                         sending = true
                                         scope.launch {
                                             try {
-                                                TotemApi.streamChat(token, workspace.slug, prompt) { text ->
+                                                TotemApi.streamChat(token, workspace.slug, prompt, activeThread?.slug) { text ->
                                                     val lastIndex = messages.lastIndex
                                                     if (lastIndex >= 0 && messages[lastIndex].id == assistantId) {
                                                         messages[lastIndex] = messages[lastIndex].copy(content = text)
@@ -238,7 +258,7 @@ fun TotemRoot(
                                         }
                                     }
                                 },
-                                onNewChat = { loadWorkspaceData() }
+                                onNewChat = { createNewChat() }
                             )
                         }
                     }
@@ -293,6 +313,7 @@ fun TotemRoot(
                                 workspaces.clear()
                                 messages.clear()
                                 selectedWorkspace = null
+                                activeThread = null
                                 credits = null
                                 wallet = null
                                 loginIdentifier = ""
