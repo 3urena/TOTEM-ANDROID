@@ -82,9 +82,9 @@ fun ProfileScreen(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = if (signedIn) {
-                    "The app mirrors the hosted session into encrypted native storage. The hosted WebView also keeps the website's own localStorage session copy."
+                    "Your session is stored in encrypted Android storage. Account data and AI requests stay connected to the official TOTEM service."
                 } else {
-                    "Sign in through the hosted login screen to use the workspace."
+                    "Sign in with the native form in Chat. No website page is embedded in the app."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
@@ -99,7 +99,7 @@ fun ProfileScreen(
                 )
             ) {
                 Text(
-                    text = if (signedIn) "OPEN WORKSPACE" else "SIGN IN",
+                    text = if (signedIn) "OPEN CHAT" else "SIGN IN",
                     style = MaterialTheme.typography.labelLarge
                 )
             }
