@@ -52,6 +52,18 @@ data class TotemWalletBalance(
     val error: String?
 )
 
+data class TotemInferenceOption(
+    val key: String,
+    val label: String,
+    val description: String,
+    val available: Boolean
+)
+
+data class TotemInferenceOptions(
+    val options: List<TotemInferenceOption>,
+    val selected: String?
+)
+
 data class TotemLoginResult(
     val valid: Boolean,
     val token: String?,
@@ -306,6 +318,69 @@ class TotemApi(private val store: SessionStore) {
             title = thread.optString("name", "New chat"),
             preview = ""
         )
+    }
+
+    /** Loads the official server-provided inference choices for this workspace. */
+    suspend fun inferenceOptions(workspaceSlug: String): TotemInferenceOptions {
+        val session = requireSession()
+        val response = request(
+            "GET",
+            "/workspace/$workspaceSlug/inference-options",
+            bearer = session
+        )
+        val array = response.optJSONArray("options") ?: JSONArray()
+        val options = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val key = item.optString("key")
+                if (key.isBlank()) continue
+                add(
+                    TotemInferenceOption(
+                        key = key,
+                        label = item.optString("label").takeIf { it.isNotBlank() } ?: key,
+                        description = item.optString("description"),
+                        available = item.optBoolean("available", false)
+                    )
+                )
+            }
+        }
+        val selected = response.optString("selected")
+            .takeIf { it.isNotBlank() && it != "null" }
+        return TotemInferenceOptions(options = options, selected = selected)
+    }
+
+    /** Saves the selected option on the server so it also applies after app restarts. */
+    suspend fun setInferenceOption(workspaceSlug: String, optionKey: String) {
+        val session = requireSession()
+        val response = request(
+            method = "POST",
+            path = "/workspace/$workspaceSlug/inference-option",
+            bearer = session,
+            body = JSONObject().put("option", optionKey)
+        )
+        if (!response.optBoolean("success", false)) {
+            throw IllegalStateException(
+                response.optString("message").takeIf { it.isNotBlank() }
+                    ?: response.optString("error").takeIf { it.isNotBlank() }
+                    ?: "Could not change the TOTEM inference option."
+            )
+        }
+
+        // An agent WebSocket keeps the model chosen when that turn began.
+        // Close an idle session after switching so the next message uses the new option.
+        resetAgentSessionForInferenceChange()
+    }
+
+    private fun resetAgentSessionForInferenceChange() {
+        val previous = synchronized(agentLock) {
+            activeAgentSession.also { activeAgentSession = null }
+        } ?: return
+
+        previous.awaitingFeedback = false
+        previous.socket?.close(1000, "Inference option changed")
+        previous.sink = null
+        previous.turnCompletion?.complete(Unit)
+        previous.turnCompletion = null
     }
 
     fun streamChat(
