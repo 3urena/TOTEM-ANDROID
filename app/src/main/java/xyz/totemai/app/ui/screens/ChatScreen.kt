@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,6 +64,7 @@ import xyz.totemai.app.TotemApi
 import xyz.totemai.app.TotemChatMessage
 import xyz.totemai.app.TotemChatStreamEvent
 import xyz.totemai.app.TotemChatThread
+import xyz.totemai.app.TotemInferenceOption
 import xyz.totemai.app.TotemWorkspace
 import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.ui.theme.InkElevated
@@ -94,6 +97,10 @@ fun ChatScreen(
     var loading by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var inferenceOptions by remember { mutableStateOf<List<TotemInferenceOption>>(emptyList()) }
+    var selectedInferenceOption by rememberSaveable { mutableStateOf<String?>(null) }
+    var inferenceMenuExpanded by remember { mutableStateOf(false) }
+    var changingInferenceOption by remember { mutableStateOf(false) }
 
     suspend fun loadChatWorkspace() {
         val available = api.workspaces()
@@ -112,6 +119,13 @@ fun ChatScreen(
         val snapshot = api.workspaceContent(selectedWorkspace.slug)
         workspace = selectedWorkspace
         threads = snapshot.threads
+
+        // The hosted API is the source of truth for option availability and selection.
+        val inferenceConfig = runCatching {
+            api.inferenceOptions(selectedWorkspace.slug)
+        }.getOrNull()
+        inferenceOptions = inferenceConfig?.options?.filter { it.available }.orEmpty()
+        selectedInferenceOption = inferenceConfig?.selected
 
         val savedSelection = store.activeChat()
         val savedThread = savedSelection.second?.takeIf {
@@ -227,6 +241,25 @@ fun ChatScreen(
                 error = e.message ?: "Could not refresh the conversation."
             } finally {
                 loading = false
+            }
+        }
+    }
+
+    fun selectInferenceOption(option: TotemInferenceOption) {
+        val currentWorkspace = workspace ?: return
+        if (sending || changingInferenceOption) return
+
+        inferenceMenuExpanded = false
+        changingInferenceOption = true
+        scope.launch {
+            try {
+                api.setInferenceOption(currentWorkspace.slug, option.key)
+                selectedInferenceOption = option.key
+                error = null
+            } catch (e: Exception) {
+                error = e.message ?: "Could not change the inference option."
+            } finally {
+                changingInferenceOption = false
             }
         }
     }
@@ -425,6 +458,74 @@ fun ChatScreen(
             }
 
             Divider(color = Outline)
+
+            if (signedIn && inferenceOptions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "AI MODE",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        TextButton(
+                            onClick = { inferenceMenuExpanded = true },
+                            enabled = !sending && !changingInferenceOption
+                        ) {
+                            Text(
+                                text = inferenceOptions.firstOrNull {
+                                    it.key == selectedInferenceOption
+                                }?.label ?: "Choose mode",
+                                color = Violet
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = inferenceMenuExpanded,
+                            onDismissRequest = { inferenceMenuExpanded = false },
+                            modifier = Modifier.background(Surface1)
+                        ) {
+                            inferenceOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                option.label,
+                                                color = TextPrimary,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            if (option.description.isNotBlank()) {
+                                                Text(
+                                                    option.description,
+                                                    color = TextSecondary,
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = { selectInferenceOption(option) },
+                                    enabled = !sending && !changingInferenceOption
+                                )
+                            }
+                        }
+                    }
+                    if (changingInferenceOption) {
+                        Spacer(Modifier.width(6.dp))
+                        CircularProgressIndicator(
+                            color = Violet,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+                Divider(color = Outline)
+            }
 
             if (!signedIn) {
                 EmptyState(
