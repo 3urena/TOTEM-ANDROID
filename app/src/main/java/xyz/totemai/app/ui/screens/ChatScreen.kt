@@ -114,9 +114,9 @@ fun ChatScreen(
         threads = snapshot.threads
 
         val savedSelection = store.activeChat()
-        val savedThread = savedSelection.second.takeIf {
+        val savedThread = savedSelection.second?.takeIf {
             savedSelection.first == selectedWorkspace.slug &&
-                !it.isNullOrBlank() &&
+                it.isNotBlank() &&
                 snapshot.messagesByThread.containsKey(it)
         }
         val targetSlug = savedThread
