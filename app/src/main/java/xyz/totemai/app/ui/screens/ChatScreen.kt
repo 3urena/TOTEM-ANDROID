@@ -66,7 +66,7 @@ import xyz.totemai.app.TotemChatStreamEvent
 import xyz.totemai.app.TotemChatThread
 import xyz.totemai.app.TotemInferenceOption
 import xyz.totemai.app.TotemWorkspace
-import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.InkElevated
 import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.Outline
@@ -429,7 +429,7 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Ink)
+                .background(AppBackground)
                 .imePadding()
         ) {
             Row(

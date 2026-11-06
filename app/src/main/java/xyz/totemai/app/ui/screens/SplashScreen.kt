@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import xyz.totemai.app.ui.components.Gyroscope
 import xyz.totemai.app.ui.components.TotemLogo
-import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.TextSecondary
 
@@ -40,7 +40,7 @@ fun SplashScreen(onFinished: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink),
+            .background(AppBackground),
         contentAlignment = Alignment.Center
     ) {
         Gyroscope(

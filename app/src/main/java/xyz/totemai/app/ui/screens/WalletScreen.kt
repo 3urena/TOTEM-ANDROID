@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import xyz.totemai.app.SessionStore
 import xyz.totemai.app.TotemApi
 import xyz.totemai.app.TotemWalletBalance
-import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.InkElevated
 import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.Outline
@@ -119,7 +119,7 @@ fun WalletScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
             .padding(horizontal = 18.dp, vertical = 14.dp)
     ) {
         Row(
@@ -241,7 +241,7 @@ fun WalletScreen(
                 when {
                     loading && wallet == null -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(color = Violet, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(color = violetColor, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(10.dp))
                             Text("Loading wallet status…", color = TextSecondary)
                         }
@@ -296,6 +296,10 @@ private fun WalletCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun CreditRing() {
+    val outlineColor = Outline
+    val limeColor = Lime
+    val violetColor = Violet
+
     Box(
         modifier = Modifier.size(104.dp),
         contentAlignment = Alignment.Center
@@ -303,21 +307,21 @@ private fun CreditRing() {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 9.dp.toPx()
             drawArc(
-                color = Outline,
+                color = outlineColor,
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,
                 style = Stroke(width = stroke, cap = StrokeCap.Round)
             )
             drawArc(
-                color = Lime,
+                color = limeColor,
                 startAngle = -90f,
                 sweepAngle = 205f,
                 useCenter = false,
                 style = Stroke(width = stroke, cap = StrokeCap.Round)
             )
             drawArc(
-                color = Violet,
+                color = violetColor,
                 startAngle = 120f,
                 sweepAngle = 130f,
                 useCenter = false,

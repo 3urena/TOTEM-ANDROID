@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 import xyz.totemai.app.SessionStore
 import xyz.totemai.app.TotemApi
 import xyz.totemai.app.TotemLoginResult
-import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.InkElevated
 import xyz.totemai.app.ui.theme.TextPrimary
 import xyz.totemai.app.ui.theme.TextSecondary
@@ -260,7 +260,7 @@ fun NativeSignInScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
             .imePadding(),
         contentAlignment = Alignment.Center
     ) {
