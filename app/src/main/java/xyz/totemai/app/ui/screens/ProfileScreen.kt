@@ -163,6 +163,14 @@ fun ProfileScreen(
             subtitle = "github.com/fred-terzi/totem-llm"
         ) { Intents.openUrl(context, TotemConfig.REPO_URL) }
 
+        Spacer(Modifier.height(10.dp))
+
+        ActionRow(
+            icon = Icons.Default.Send,
+            title = "App developer",
+            subtitle = "github.com/celery0co"
+        ) { Intents.openUrl(context, "https://github.com/celery0co") }
+
         Spacer(Modifier.height(20.dp))
 
         Button(
