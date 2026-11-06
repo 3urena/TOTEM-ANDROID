@@ -94,7 +94,43 @@ fun ChatScreen(
     var loading by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var initializedLaunchId by rememberSaveable { mutableStateOf("") }
+
+    suspend fun loadChatWorkspace() {
+        val available = api.workspaces()
+        if (available.isEmpty()) {
+            workspace = null
+            threads = emptyList()
+            activeThreadSlug = TotemApi.DEFAULT_THREAD
+            messages = emptyList()
+            error = "No workspace is available for this account."
+            return
+        }
+
+        val selectedWorkspace = available.first()
+        // Load the existing server history before exposing the chat composer.
+        // Do not create a blank thread automatically on every app launch.
+        val snapshot = api.workspaceContent(selectedWorkspace.slug)
+        workspace = selectedWorkspace
+        threads = snapshot.threads
+
+        val savedSelection = store.activeChat()
+        val savedThread = savedSelection.second.takeIf {
+            savedSelection.first == selectedWorkspace.slug &&
+                !it.isNullOrBlank() &&
+                snapshot.messagesByThread.containsKey(it)
+        }
+        val targetSlug = savedThread
+            ?: snapshot.threads.firstOrNull {
+                snapshot.messagesByThread[it.slug]?.isNotEmpty() == true
+            }?.slug
+            ?: snapshot.threads.firstOrNull()?.slug
+            ?: TotemApi.DEFAULT_THREAD
+
+        activeThreadSlug = targetSlug
+        messages = snapshot.messagesByThread[targetSlug].orEmpty()
+        store.saveActiveChat(selectedWorkspace.slug, targetSlug)
+        error = null
+    }
 
     suspend fun refreshHistory(keepSelection: Boolean = true) {
         val currentWorkspace = workspace ?: return
@@ -103,37 +139,27 @@ fun ChatScreen(
         threads = snapshot.threads
         val targetSlug = if (keepSelection && snapshot.messagesByThread.containsKey(oldSlug)) {
             oldSlug
-        } else if (keepSelection && threads.any { it.slug == oldSlug }) {
-            oldSlug
         } else {
-            snapshot.threads.firstOrNull()?.slug ?: TotemApi.DEFAULT_THREAD
+            snapshot.threads.firstOrNull {
+                snapshot.messagesByThread[it.slug]?.isNotEmpty() == true
+            }?.slug ?: snapshot.threads.firstOrNull()?.slug ?: TotemApi.DEFAULT_THREAD
         }
         activeThreadSlug = targetSlug
         messages = snapshot.messagesByThread[targetSlug].orEmpty()
+        store.saveActiveChat(currentWorkspace.slug, targetSlug)
     }
 
     LaunchedEffect(launchId, signedIn) {
         if (!signedIn) {
             error = "Sign in to your TOTEM account to use chat."
             loading = false
-        } else if (initializedLaunchId != launchId) {
+        } else {
             loading = true
             error = null
             try {
-                val available = api.workspaces()
-                if (available.isEmpty()) {
-                    error = "No workspace is available for this account."
-                } else {
-                    workspace = available.first()
-                    val snapshot = api.workspaceContent(available.first().slug)
-                    threads = snapshot.threads
-                    val fresh = api.newThread(available.first().slug)
-                    activeThreadSlug = fresh.slug
-                    threads = listOf(fresh) + snapshot.threads.filterNot { it.slug == fresh.slug }
-                    messages = emptyList()
-                    initializedLaunchId = launchId
-                }
+                loadChatWorkspace()
             } catch (e: Exception) {
+                workspace = null
                 error = e.message ?: "Could not connect to the TOTEM chat service."
             } finally {
                 loading = false
@@ -156,6 +182,7 @@ fun ChatScreen(
                 val fresh = api.newThread(currentWorkspace.slug)
                 val snapshot = api.workspaceContent(currentWorkspace.slug)
                 activeThreadSlug = fresh.slug
+                store.saveActiveChat(currentWorkspace.slug, fresh.slug)
                 messages = emptyList()
                 threads = if (snapshot.threads.any { it.slug == fresh.slug }) {
                     snapshot.threads
@@ -178,6 +205,7 @@ fun ChatScreen(
                 val snapshot = api.workspaceContent(currentWorkspace.slug)
                 threads = snapshot.threads
                 activeThreadSlug = thread.slug
+                store.saveActiveChat(currentWorkspace.slug, thread.slug)
                 messages = snapshot.messagesByThread[thread.slug].orEmpty()
                 drawerState.close()
                 error = null
@@ -210,6 +238,10 @@ fun ChatScreen(
 
         input = ""
         error = null
+        store.saveActiveChat(
+            currentWorkspace.slug,
+            activeThreadSlug.ifBlank { TotemApi.DEFAULT_THREAD }
+        )
         val assistantId = "assistant-${UUID.randomUUID()}"
         messages = messages + TotemChatMessage(
             id = "user-${UUID.randomUUID()}",
@@ -410,26 +442,14 @@ fun ChatScreen(
                     title = "Chat unavailable",
                     detail = error ?: "The workspace could not be loaded.",
                     action = "Retry",
-                    onAction = { 
-                        initializedLaunchId = ""
-                        // Re-run initialization for this app launch.
+                    onAction = {
                         scope.launch {
                             loading = true
+                            error = null
                             try {
-                                val available = api.workspaces()
-                                if (available.isEmpty()) error = "No workspace is available for this account."
-                                else {
-                                    workspace = available.first()
-                                    val snapshot = api.workspaceContent(available.first().slug)
-                                    threads = snapshot.threads
-                                    val fresh = api.newThread(available.first().slug)
-                                    activeThreadSlug = fresh.slug
-                                    messages = emptyList()
-                                    threads = listOf(fresh) + snapshot.threads.filterNot { it.slug == fresh.slug }
-                                    initializedLaunchId = launchId
-                                    error = null
-                                }
+                                loadChatWorkspace()
                             } catch (e: Exception) {
+                                workspace = null
                                 error = e.message ?: "Could not connect to TOTEM."
                             } finally {
                                 loading = false
