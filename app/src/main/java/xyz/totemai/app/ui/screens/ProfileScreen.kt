@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.ui.components.ActionRow
 import xyz.totemai.app.ui.components.SectionCard
 import xyz.totemai.app.ui.components.TotemLogo
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.Danger
 import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.ui.theme.Lime
@@ -48,6 +50,8 @@ fun ProfileScreen(
     displayName: String?,
     onOpenWorkspace: () -> Unit,
     onOpenWallet: () -> Unit,
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -55,7 +59,7 @@ fun ProfileScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
@@ -136,6 +140,35 @@ fun ProfileScreen(
             ) {
                 Text("Host", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                 Text("beta.totemai.xyz", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SectionCard(title = "Appearance") {
+            Text(
+                text = "Choose how TOTEM looks on this device.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(
+                    "system" to "System",
+                    "light" to "Light",
+                    "dark" to "Dark"
+                ).forEach { (mode, label) ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 

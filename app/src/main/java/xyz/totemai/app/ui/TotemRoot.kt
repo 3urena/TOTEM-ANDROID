@@ -38,7 +38,7 @@ import xyz.totemai.app.ui.screens.NativeSignInScreen
 import xyz.totemai.app.ui.screens.ProfileScreen
 import xyz.totemai.app.ui.screens.SplashScreen
 import xyz.totemai.app.ui.screens.WalletScreen
-import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.AppBackground
 import java.util.UUID
 
 @Composable
@@ -47,7 +47,9 @@ fun TotemRoot(
     events: NavEvents,
     store: SessionStore,
     monitor: NetworkMonitor,
-    startTarget: DeepTarget
+    startTarget: DeepTarget,
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -76,10 +78,10 @@ fun TotemRoot(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
     ) {
         Scaffold(
-            containerColor = Ink,
+            containerColor = AppBackground,
             bottomBar = {
                 TotemBottomBar(
                     current = route,
@@ -114,6 +116,8 @@ fun TotemRoot(
                             displayName = displayName,
                             onOpenWorkspace = { navController.navigateToTab(Routes.WORKSPACE) },
                             onOpenWallet = { navController.navigateToTab(Routes.WALLET) },
+                            themeMode = themeMode,
+                            onThemeModeChange = onThemeModeChange,
                             onSignOut = {
                                 store.clear()
                                 sessionTick++

@@ -73,6 +73,30 @@ class SessionStore private constructor(context: Context) {
         }
     }
 
+    /** Device-local appearance preference; it survives account sign-out. */
+    @Synchronized
+    fun themeMode(): String {
+        val saved = runCatching {
+            appContext.getSharedPreferences(PREFERENCES_FILE, Context.MODE_PRIVATE)
+                .getString(KEY_THEME_MODE, DEFAULT_THEME_MODE)
+        }.getOrNull()
+        return saved?.takeIf { it in setOf("system", "light", "dark") } ?: DEFAULT_THEME_MODE
+    }
+
+    @Synchronized
+    fun saveThemeMode(mode: String) {
+        val safeMode = mode.takeIf { it in setOf("system", "light", "dark") }
+            ?: DEFAULT_THEME_MODE
+        runCatching {
+            appContext.getSharedPreferences(PREFERENCES_FILE, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_THEME_MODE, safeMode)
+                .apply()
+        }.onFailure {
+            Log.w(TAG, "theme preference write failed: ${it.javaClass.simpleName}")
+        }
+    }
+
     @Synchronized
     fun token(): String? = read(KEY_TOKEN) ?: memoryToken
 
@@ -173,6 +197,9 @@ class SessionStore private constructor(context: Context) {
     companion object {
         private const val TAG = "TotemSession"
         private const val FILE = "totem_session"
+        private const val PREFERENCES_FILE = "totem_preferences"
+        private const val KEY_THEME_MODE = "theme_mode"
+        private const val DEFAULT_THEME_MODE = "dark"
         const val KEY_TOKEN = TotemConfig.KEY_TOKEN
         const val KEY_USER = TotemConfig.KEY_USER
         private const val KEY_DEVICE_TOKEN = "totem_mobile_device_token"
