@@ -35,8 +35,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -260,7 +258,6 @@ fun ChatScreen(
         val currentWorkspace = workspace ?: return
         if (sending || changingInferenceOption) return
 
-        inferenceMenuExpanded = false
         changingInferenceOption = true
         scope.launch {
             try {
