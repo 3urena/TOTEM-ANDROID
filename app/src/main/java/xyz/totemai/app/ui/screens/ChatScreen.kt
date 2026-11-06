@@ -435,21 +435,19 @@ fun ChatScreen(
         }
     ) {
         Box(Modifier.fillMaxSize()) {
-            if (IsDarkTotemTheme) {
-                Image(
-                    painter = painterResource(R.drawable.totem_chat_wallpaper),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(AppBackground.copy(alpha = 0.38f))
-                )
-            } else {
-                Box(Modifier.fillMaxSize().background(AppBackground))
-            }
+            Image(
+                painter = painterResource(R.drawable.totem_chat_wallpaper),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        AppBackground.copy(alpha = if (IsDarkTotemTheme) 0.38f else 0.76f)
+                    )
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
