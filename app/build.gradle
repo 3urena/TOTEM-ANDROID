@@ -3,6 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Use a persistent keystore in CI so future APKs can update existing installs.
+def totemKeystorePath = System.getenv("TOTEM_KEYSTORE_PATH")
+def totemStableSigningEnabled = totemKeystorePath != null && !totemKeystorePath.trim().isEmpty()
+
 android {
     namespace 'xyz.totemai.app'
     compileSdk 34
@@ -11,15 +15,29 @@ android {
         applicationId 'xyz.totemai.app'
         minSdk 24
         targetSdk 34
-        versionCode 3
-        versionName '2.1'
+        versionCode 4
+        versionName '2.2'
         vectorDrawables { useSupportLibrary true }
+    }
+
+    signingConfigs {
+        if (totemStableSigningEnabled) {
+            totemStable {
+                storeFile file(totemKeystorePath)
+                storePassword System.getenv("TOTEM_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("TOTEM_KEY_ALIAS")
+                keyPassword System.getenv("TOTEM_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         debug {
             debuggable true
             minifyEnabled false
+            if (totemStableSigningEnabled) {
+                signingConfig signingConfigs.totemStable
+            }
         }
         release {
             minifyEnabled false
