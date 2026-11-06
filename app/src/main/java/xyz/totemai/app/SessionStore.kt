@@ -14,6 +14,8 @@ class SessionStore private constructor(context: Context) {
     private var memoryToken: String? = null
     private var memoryUser: String? = null
     private var memoryDeviceToken: String? = null
+    private var memoryLastWorkspace: String? = null
+    private var memoryLastThread: String? = null
 
     @Synchronized
     private fun prefs(): SharedPreferences? {
@@ -45,6 +47,7 @@ class SessionStore private constructor(context: Context) {
         val previousToken = token()
         if (!previousToken.isNullOrBlank() && previousToken != token) {
             clearDeviceToken()
+            clearActiveChat()
         }
         val p = prefs()
         if (p == null) {
@@ -101,6 +104,45 @@ class SessionStore private constructor(context: Context) {
         runCatching { prefs()?.edit()?.remove(KEY_DEVICE_TOKEN)?.apply() }
     }
 
+    /** Saves the last workspace/thread so a new app process can restore the conversation. */
+    @Synchronized
+    fun saveActiveChat(workspaceSlug: String, threadSlug: String) {
+        memoryLastWorkspace = workspaceSlug
+        memoryLastThread = threadSlug
+        val p = prefs() ?: return
+        runCatching {
+            p.edit()
+                .putString(KEY_LAST_WORKSPACE, workspaceSlug)
+                .putString(KEY_LAST_THREAD, threadSlug)
+                .apply()
+        }.onFailure {
+            Log.w(TAG, "active chat write failed: ${it.javaClass.simpleName}")
+            prefs = null
+        }
+    }
+
+    @Synchronized
+    fun activeChat(): Pair<String?, String?> {
+        val p = prefs()
+        val workspace = runCatching { p?.getString(KEY_LAST_WORKSPACE, null) }.getOrNull()
+            ?: memoryLastWorkspace
+        val thread = runCatching { p?.getString(KEY_LAST_THREAD, null) }.getOrNull()
+            ?: memoryLastThread
+        return workspace to thread
+    }
+
+    @Synchronized
+    fun clearActiveChat() {
+        memoryLastWorkspace = null
+        memoryLastThread = null
+        runCatching {
+            prefs()?.edit()
+                ?.remove(KEY_LAST_WORKSPACE)
+                ?.remove(KEY_LAST_THREAD)
+                ?.apply()
+        }
+    }
+
     private fun read(key: String): String? {
         val p = prefs() ?: return null
         return runCatching { p.getString(key, null) }
@@ -116,6 +158,8 @@ class SessionStore private constructor(context: Context) {
         memoryToken = null
         memoryUser = null
         memoryDeviceToken = null
+        memoryLastWorkspace = null
+        memoryLastThread = null
         val p = prefs() ?: return
         runCatching { p.edit().clear().apply() }
             .onFailure {
@@ -132,6 +176,8 @@ class SessionStore private constructor(context: Context) {
         const val KEY_TOKEN = TotemConfig.KEY_TOKEN
         const val KEY_USER = TotemConfig.KEY_USER
         private const val KEY_DEVICE_TOKEN = "totem_mobile_device_token"
+        private const val KEY_LAST_WORKSPACE = "totem_last_workspace"
+        private const val KEY_LAST_THREAD = "totem_last_thread"
 
         @Volatile
         private var instance: SessionStore? = null
