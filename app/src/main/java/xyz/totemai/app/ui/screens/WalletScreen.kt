@@ -241,7 +241,7 @@ fun WalletScreen(
                 when {
                     loading && wallet == null -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(color = violetColor, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(color = Violet, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(10.dp))
                             Text("Loading wallet status…", color = TextSecondary)
                         }
