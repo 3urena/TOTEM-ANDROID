@@ -43,6 +43,10 @@ internal val LightTotemPalette = TotemPalette(
 )
 
 internal val LocalTotemPalette = staticCompositionLocalOf { DarkTotemPalette }
+internal val LocalIsDarkTotemTheme = staticCompositionLocalOf { true }
+
+val IsDarkTotemTheme: Boolean
+    @Composable get() = LocalIsDarkTotemTheme.current
 
 val AppBackground: Color
     @Composable get() = LocalTotemPalette.current.background

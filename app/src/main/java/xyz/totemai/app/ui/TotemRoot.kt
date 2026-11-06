@@ -7,7 +7,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -18,6 +20,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -54,6 +57,7 @@ fun TotemRoot(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route ?: startTarget.route()
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val appLaunchId = remember { UUID.randomUUID().toString() }
     var showSplash by remember { androidx.compose.runtime.mutableStateOf(true) }
     var sessionTick by remember { mutableIntStateOf(0) }
@@ -83,10 +87,12 @@ fun TotemRoot(
         Scaffold(
             containerColor = AppBackground,
             bottomBar = {
-                TotemBottomBar(
-                    current = route,
-                    onSelect = { target -> navController.navigateToTab(target) }
-                )
+                if (route != Routes.WORKSPACE || !imeVisible) {
+                    TotemBottomBar(
+                        current = route,
+                        onSelect = { target -> navController.navigateToTab(target) }
+                    )
+                }
             }
         ) { inner ->
             Box(

@@ -1,7 +1,11 @@
 package xyz.totemai.app.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,12 +59,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import xyz.totemai.app.R
 import xyz.totemai.app.SessionStore
 import xyz.totemai.app.TotemApi
 import xyz.totemai.app.TotemChatMessage
@@ -68,6 +78,7 @@ import xyz.totemai.app.TotemInferenceOption
 import xyz.totemai.app.TotemWorkspace
 import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.InkElevated
+import xyz.totemai.app.ui.theme.IsDarkTotemTheme
 import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.Outline
 import xyz.totemai.app.ui.theme.Surface1
@@ -88,6 +99,7 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val listState = rememberLazyListState()
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     var workspace by remember { mutableStateOf<TotemWorkspace?>(null) }
     var threads by remember { mutableStateOf<List<TotemChatThread>>(emptyList()) }
@@ -99,7 +111,6 @@ fun ChatScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var inferenceOptions by remember { mutableStateOf<List<TotemInferenceOption>>(emptyList()) }
     var selectedInferenceOption by rememberSaveable { mutableStateOf<String?>(null) }
-    var inferenceMenuExpanded by remember { mutableStateOf(false) }
     var changingInferenceOption by remember { mutableStateOf(false) }
 
     suspend fun loadChatWorkspace() {
@@ -426,12 +437,27 @@ fun ChatScreen(
             }
         }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(AppBackground)
-                .imePadding()
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            if (IsDarkTotemTheme) {
+                Image(
+                    painter = painterResource(R.drawable.totem_chat_wallpaper),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(AppBackground.copy(alpha = 0.38f))
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(AppBackground))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding()
+            ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -463,9 +489,9 @@ fun ChatScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
                         text = "AI MODE",
@@ -473,50 +499,45 @@ fun ChatScreen(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Box {
-                        TextButton(
-                            onClick = { inferenceMenuExpanded = true },
-                            enabled = !sending && !changingInferenceOption
-                        ) {
-                            Text(
-                                text = inferenceOptions.firstOrNull {
-                                    it.key == selectedInferenceOption
-                                }?.label ?: "Choose mode",
-                                color = Violet
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = inferenceMenuExpanded,
-                            onDismissRequest = { inferenceMenuExpanded = false },
-                            modifier = Modifier.background(Surface1)
-                        ) {
-                            inferenceOptions.forEach { option ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                option.label,
-                                                color = TextPrimary,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                            if (option.description.isNotBlank()) {
-                                                Text(
-                                                    option.description,
-                                                    color = TextSecondary,
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = { selectInferenceOption(option) },
-                                    enabled = !sending && !changingInferenceOption
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        inferenceOptions.forEach { option ->
+                            val selected = option.key == selectedInferenceOption
+                            val chipShape = RoundedCornerShape(11.dp)
+                            Box(
+                                modifier = Modifier
+                                    .clip(chipShape)
+                                    .background(
+                                        if (selected) Violet.copy(alpha = 0.17f)
+                                        else InkElevated.copy(alpha = 0.78f)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (selected) Violet.copy(alpha = 0.92f) else Outline,
+                                        shape = chipShape
+                                    )
+                                    .clickable(
+                                        enabled = !sending && !changingInferenceOption,
+                                        onClick = { selectInferenceOption(option) }
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 9.dp)
+                            ) {
+                                Text(
+                                    text = option.label,
+                                    color = if (selected) Violet else TextPrimary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
                                 )
                             }
                         }
                     }
                     if (changingInferenceOption) {
-                        Spacer(Modifier.width(6.dp))
                         CircularProgressIndicator(
                             color = Violet,
                             modifier = Modifier.size(16.dp),
@@ -620,8 +641,13 @@ fun ChatScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(InkElevated)
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                        .background(InkElevated.copy(alpha = 0.92f))
+                        .padding(
+                            start = 10.dp,
+                            end = 10.dp,
+                            top = 10.dp,
+                            bottom = if (imeVisible) 0.dp else 10.dp
+                        ),
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -658,6 +684,7 @@ fun ChatScreen(
                     }
                 }
             }
+        }
         }
     }
 }

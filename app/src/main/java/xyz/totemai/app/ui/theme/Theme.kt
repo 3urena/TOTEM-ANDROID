@@ -59,7 +59,10 @@ fun TotemTheme(
         )
     }
 
-    CompositionLocalProvider(LocalTotemPalette provides palette) {
+    CompositionLocalProvider(
+        LocalTotemPalette provides palette,
+        LocalIsDarkTotemTheme provides darkTheme
+    ) {
         MaterialTheme(colorScheme = scheme, typography = TotemTypography, content = content)
     }
 }
