@@ -1,6 +1,7 @@
 package xyz.totemai.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,12 +29,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import xyz.totemai.app.ui.components.ActionRow
 import xyz.totemai.app.ui.components.Gyroscope
 import xyz.totemai.app.ui.components.StatusChip
 import xyz.totemai.app.ui.components.TotemLogo
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.Ink
+import xyz.totemai.app.ui.theme.Violet
 import xyz.totemai.app.ui.theme.Lime
 import xyz.totemai.app.ui.theme.Outline
 import xyz.totemai.app.ui.theme.Surface1
@@ -50,127 +56,99 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TotemLogo(Modifier.size(30.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TotemLogo(Modifier.size(34.dp))
             Spacer(Modifier.width(10.dp))
-            Text(
-                text = "TOTEM",
-                style = MaterialTheme.typography.titleLarge,
-                color = TextPrimary
-            )
+            Column(Modifier.weight(1f)) {
+                Text("TOTEM", style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontWeight = FontWeight.Bold)
+                Text("AI WORKSPACE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+            StatusChip(text = if (online) "ONLINE" else "OFFLINE", active = online)
         }
 
-        Spacer(Modifier.height(34.dp))
-
+        Spacer(Modifier.height(24.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(210.dp)
-                .background(Surface1, RoundedCornerShape(24.dp)),
+                .height(224.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Brush.linearGradient(listOf(Surface1, Violet.copy(alpha = 0.18f), Surface1)))
+                .border(1.dp, Outline, RoundedCornerShape(28.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Gyroscope(Modifier.size(190.dp))
-            TotemLogo(Modifier.size(64.dp))
+            Gyroscope(Modifier.align(Alignment.CenterEnd).size(190.dp))
+            TotemLogo(Modifier.align(Alignment.CenterEnd).padding(end = 58.dp).size(58.dp))
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(0.64f)
+                    .padding(start = 20.dp)
+            ) {
+                Text("YOUR AI\nWORKSPACE", style = MaterialTheme.typography.labelSmall, color = Lime, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Text("Think beyond.", style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(7.dp))
+                Text("One place for your models and conversations.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
         }
 
-        Spacer(Modifier.height(26.dp))
-
+        Spacer(Modifier.height(24.dp))
         Text(
-            text = "Your workspace,\none tap away.",
-            style = MaterialTheme.typography.displayLarge,
-            color = TextPrimary
+            text = if (signedIn) "Welcome back${displayName?.takeIf { it.isNotBlank() }?.let { ", $it" } ?: ""}." else "Your AI workspace starts here.",
+            style = MaterialTheme.typography.headlineMedium,
+            color = TextPrimary,
+            fontWeight = FontWeight.Bold
         )
-
-        Spacer(Modifier.height(12.dp))
-
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = "TOTEM MOBILE connects to the live hosted platform. Your account, models, credits, payments and tools remain on TOTEM servers while this app provides native navigation, secure session storage and a mobile-first shell.",
+            "Chat with TOTEM, choose your inference mode and keep your account connected to the official service.",
             style = MaterialTheme.typography.bodyLarge,
             color = TextSecondary
         )
 
         Spacer(Modifier.height(20.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusChip(text = if (online) "ONLINE" else "OFFLINE", active = online)
-            StatusChip(text = if (signedIn) "SIGNED IN" else "SIGNED OUT", active = signedIn)
-        }
-
-        if (!displayName.isNullOrBlank()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Welcome back, $displayName",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
-        }
-
-        Spacer(Modifier.height(28.dp))
-
         Button(
             onClick = onOpenWorkspace,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Lime,
-                contentColor = Ink
-            )
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)
         ) {
-            Text(
-                text = if (signedIn) "OPEN WORKSPACE" else "SIGN IN",
-                style = MaterialTheme.typography.labelLarge
-            )
+            Text(if (signedIn) "OPEN CHAT" else "SIGN IN", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         }
 
-        Spacer(Modifier.height(26.dp))
-
+        Spacer(Modifier.height(24.dp))
+        Text("QUICK ACCESS", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
         ActionRow(
             icon = Icons.Default.Send,
-            title = "Workspace",
-            subtitle = "Threads, models and tools on the live platform"
+            title = "Chat",
+            subtitle = "Start a new conversation or open chat history"
         ) { onOpenWorkspace() }
-
         Spacer(Modifier.height(10.dp))
-
         ActionRow(
             icon = Icons.Default.Lock,
-            title = "Wallet connections",
-            subtitle = "Connect an external wallet through the hosted flow"
+            title = "Wallet",
+            subtitle = "View credits and connected wallet"
         ) { onOpenWallet() }
-
         Spacer(Modifier.height(10.dp))
-
         ActionRow(
             icon = Icons.Default.Person,
             title = if (displayName.isNullOrBlank()) "Profile" else displayName,
-            subtitle = "Session, storage and account"
+            subtitle = "Appearance, session and account settings"
         ) { onOpenProfile() }
 
+        Spacer(Modifier.height(24.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+        Spacer(Modifier.height(14.dp))
+        Text("Connected to the live TOTEM service.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         Spacer(Modifier.height(28.dp))
-
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Outline)
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            text = "Hosted at beta.totemai.xyz — no local AI backend.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
-
-        Spacer(Modifier.height(32.dp))
     }
 }

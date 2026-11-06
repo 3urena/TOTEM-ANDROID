@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import xyz.totemai.app.TotemConfig
 import xyz.totemai.app.ui.components.ActionRow
 import xyz.totemai.app.ui.components.SectionCard
 import xyz.totemai.app.ui.components.TotemLogo
+import xyz.totemai.app.ui.theme.AppBackground
 import xyz.totemai.app.ui.theme.Danger
 import xyz.totemai.app.ui.theme.Ink
 import xyz.totemai.app.ui.theme.Lime
@@ -48,6 +50,8 @@ fun ProfileScreen(
     displayName: String?,
     onOpenWorkspace: () -> Unit,
     onOpenWallet: () -> Unit,
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -55,7 +59,7 @@ fun ProfileScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Ink)
+            .background(AppBackground)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
@@ -82,9 +86,9 @@ fun ProfileScreen(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = if (signedIn) {
-                    "The app mirrors the hosted session into encrypted native storage. The hosted WebView also keeps the website's own localStorage session copy."
+                    "Your session is stored in encrypted Android storage. Account data and AI requests stay connected to the official TOTEM service."
                 } else {
-                    "Sign in through the hosted login screen to use the workspace."
+                    "Sign in with the native form in Chat. No website page is embedded in the app."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
@@ -99,7 +103,7 @@ fun ProfileScreen(
                 )
             ) {
                 Text(
-                    text = if (signedIn) "OPEN WORKSPACE" else "SIGN IN",
+                    text = if (signedIn) "OPEN CHAT" else "SIGN IN",
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -141,6 +145,35 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(12.dp))
 
+        SectionCard(title = "Appearance") {
+            Text(
+                text = "Choose how TOTEM looks on this device.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(
+                    "system" to "System",
+                    "light" to "Light",
+                    "dark" to "Dark"
+                ).forEach { (mode, label) ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         ActionRow(
             icon = Icons.Default.Info,
             title = "TOTEM website",
@@ -152,7 +185,7 @@ fun ProfileScreen(
         ActionRow(
             icon = Icons.Default.Lock,
             title = "Wallet connections",
-            subtitle = "Open the hosted settings page"
+            subtitle = "View credits and connected wallet"
         ) { onOpenWallet() }
 
         Spacer(Modifier.height(10.dp))
@@ -162,6 +195,14 @@ fun ProfileScreen(
             title = "Source repository",
             subtitle = "github.com/fred-terzi/totem-llm"
         ) { Intents.openUrl(context, TotemConfig.REPO_URL) }
+
+        Spacer(Modifier.height(10.dp))
+
+        ActionRow(
+            icon = Icons.Default.Send,
+            title = "App developer",
+            subtitle = "github.com/celery0co"
+        ) { Intents.openUrl(context, "https://github.com/celery0co") }
 
         Spacer(Modifier.height(20.dp))
 

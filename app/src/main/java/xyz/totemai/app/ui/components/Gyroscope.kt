@@ -22,6 +22,7 @@ import xyz.totemai.app.ui.theme.Violet
 
 @Composable
 fun Gyroscope(modifier: Modifier = Modifier) {
+    val violetColor = Violet
     val transition = rememberInfiniteTransition(label = "gyro")
     val tilt by transition.animateFloat(
         initialValue = 0f,
@@ -68,7 +69,7 @@ fun Gyroscope(modifier: Modifier = Modifier) {
 
         rotate(counter, centerPoint) {
             drawOval(
-                color = Violet.copy(alpha = 0.45f),
+                color = violetColor.copy(alpha = 0.45f),
                 topLeft = Offset(centerPoint.x - radius * 0.34f, centerPoint.y - radius * 0.94f),
                 size = Size(radius * 0.68f, radius * 1.88f),
                 style = Stroke(ring)
